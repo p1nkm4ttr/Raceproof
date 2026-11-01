@@ -26,8 +26,8 @@ fixtures:
 broker: $(if $(BROKER_SRCS),broker/broker,)
 updater: $(if $(UPDATER_SRCS),updater/updater,)
 
-broker/broker: $(BROKER_SRCS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lcrypto
+broker/broker: $(BROKER_SRCS) $(wildcard broker/*.h)
+	$(CC) $(CFLAGS) -o $@ $(BROKER_SRCS) $(LDFLAGS)
 
 updater/updater: $(UPDATER_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)

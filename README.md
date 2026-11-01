@@ -4,7 +4,16 @@ Does an AI tool launcher execute the bytes it approved? A controlled measurement
 
 CS/CE 232/324 Operating Systems, final project. Ahmed Mujtaba (am09620), Hamna Munib (hm09929), Myrah Hussain (mh10074).
 
-Status: skeleton. See `docs/PLAN.md` for the full plan and `docs/NOTES.md` for the running log.
+Status: broker with the pathname and descriptor policies, barrier, fixtures and outcome classifier work; the pathname race is reproduced. Sealed-copy policy, updater and harness are next.
+
+## Broker usage
+
+```bash
+make broker
+echo "RUN fixtures/bin/prog_a_1m" | ./broker/broker --policy path    # or fd, sealed
+```
+
+One JSON line per request: the decision, the observed hash, what actually ran (`child_output`), timings and errors. Environment: `RP_GAP_US` inserts a sleep between hash and exec; `RP_BARRIER_DIR` points at a directory holding the `to_updater` and `from_updater` FIFOs for controlled interleavings (see `broker/barrier.h`).
 
 ## Requirements
 
@@ -38,5 +47,4 @@ If this clone is on the Windows filesystem (`/mnt/c/...`), that is fine for buil
 | `harness/` | matrix runner, outcome classifier, `config.yaml` |
 | `analysis/` | summary tables and the three plots |
 | `results/` | committed CSVs and `env.txt` from the final runs |
-| `docs/` | proposal (LaTeX and PDF), plan, sources, running log |
 | `report/`, `slides/` | final report and presentation |
