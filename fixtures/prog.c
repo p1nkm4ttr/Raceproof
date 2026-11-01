@@ -1,7 +1,11 @@
 /* RaceProof fixture. Freestanding (no libc) so the smallest build is a few KiB
  * and file size is controlled only by PAD_BYTES.
  *
- * Prints "RACEPROOF_ID=<PROG_ID> PID=<pid>\n" to stdout and exits 0.
+ * Prints "RACEPROOF_ID=<PROG_ID> PID=<pid>\n" to stdout, then a second line
+ * "RACEPROOF_PAD=<fnv1a-64 of the padding, hex>\n", and exits 0.
+ * The ID line goes out first so launch latency (time to first byte) does not
+ * include the pad hash. The pad hash is the ground truth that catches a rewrite
+ * anywhere in the file, not only in the code that prints the ID.
  * Build: gcc -O2 -static -nostdlib -nostartfiles -fno-stack-protector \
  *        -DPROG_ID='A' -DPAD_BYTES=1048576 -o prog_a_1m prog.c
  * x86-64 Linux only (raw syscalls). */
@@ -44,10 +48,18 @@ void _start(void) {
     if (pid == 0) num[k++] = '0';
     while (pid > 0) { num[k++] = '0' + (pid % 10); pid /= 10; }
     while (k > 0) buf[i++] = num[--k];
+    buf[i++] = '\n';
+    sys3(SYS_write, 1, (long)buf, i);
+
+    /* Second line: FNV-1a 64 over the padding (0 bytes if unpadded). */
+    unsigned long long h = 1469598103934665603ULL;
 #if PAD_BYTES > 0
-    /* touch the padding so the array stays in the file */
-    if (*(volatile const unsigned char *)pad == 0xff) buf[i++] = '?';
+    for (long j = 0; j < PAD_BYTES; j++) { h ^= pad[j]; h *= 1099511628211ULL; }
 #endif
+    i = 0;
+    p = "RACEPROOF_PAD=";
+    while (*p) buf[i++] = *p++;
+    for (int s = 60; s >= 0; s -= 4) buf[i++] = "0123456789abcdef"[(h >> s) & 15];
     buf[i++] = '\n';
     sys3(SYS_write, 1, (long)buf, i);
     sys3(SYS_exit, 0, 0, 0);

@@ -4,7 +4,7 @@ Does an AI tool launcher execute the bytes it approved? A controlled measurement
 
 CS/CE 232/324 Operating Systems, final project. Ahmed Mujtaba (am09620), Hamna Munib (hm09929), Myrah Hussain (mh10074).
 
-Status: broker with the pathname and descriptor policies, barrier, fixtures and outcome classifier work; the pathname race is reproduced. Sealed-copy policy, updater and harness are next.
+Status: broker with the pathname and descriptor policies, barrier, updater, fixtures and outcome classifier work; both the pathname race and the in-place-rewrite race against the descriptor policy are reproduced. Sealed-copy policy and the matrix harness are next.
 
 ## Broker usage
 
@@ -14,6 +14,20 @@ echo "RUN fixtures/bin/prog_a_1m" | ./broker/broker --policy path    # or fd, se
 ```
 
 One JSON line per request: the decision, the observed hash, what actually ran (`child_output`), timings and errors. Environment: `RP_GAP_US` inserts a sleep between hash and exec; `RP_BARRIER_DIR` points at a directory holding the `to_updater` and `from_updater` FIFOs for controlled interleavings (see `broker/barrier.h`).
+
+## Updater usage
+
+```bash
+make updater
+# controlled: swap the file at the post_hash stage of the next broker launch
+RP_BARRIER_DIR=/path/to/fifos ./updater/updater --mode replace --at post_hash \
+    --target /scratch/target --payload fixtures/bin/prog_b_64k --once
+# free timing: rewrite .text with B's bytes, then restore A's, every 100-400 us, until killed
+./updater/updater --mode rewrite --region text --at free --target /scratch/target \
+    --payload fixtures/bin/prog_b_64k --alt fixtures/bin/prog_a_64k --interval-us 100:400
+```
+
+The fixtures print two lines, `RACEPROOF_ID=<A|B>` and `RACEPROOF_PAD=<hash of the padding>`. The classifier (`harness/classify.py`) calls a launch CORRECT only if both match the approved program, so a rewrite anywhere in the file is detected even when the ID still prints as A.
 
 ## Requirements
 

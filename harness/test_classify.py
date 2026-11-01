@@ -69,6 +69,30 @@ def test_as_row_shape():
     assert set(row) >= {"torn", "etxtbsy", "unsupported"}
 
 
+PAD_A = "0123456789abcdef"
+PAD_X = "fedcba9876543210"
+
+
+def test_pad_match_is_correct():
+    o = classify(rec(child_output=f"RACEPROOF_ID=A PID=1\nRACEPROOF_PAD={PAD_A}"), approved_pad=PAD_A)
+    assert o.primary == CORRECT and o.launched_pad == PAD_A
+
+
+def test_pad_mismatch_with_right_id_is_mismatch():
+    o = classify(rec(child_output=f"RACEPROOF_ID=A PID=1\nRACEPROOF_PAD={PAD_X}"), approved_pad=PAD_A)
+    assert o.primary == MISMATCH and o.launched_id == "A" and o.launched_pad == PAD_X
+
+
+def test_pad_ignored_when_not_supplied():
+    o = classify(rec(child_output=f"RACEPROOF_ID=A PID=1\nRACEPROOF_PAD={PAD_X}"))
+    assert o.primary == CORRECT
+
+
+def test_missing_pad_line_with_expected_pad_is_mismatch():
+    o = classify(rec(child_output="RACEPROOF_ID=A PID=1"), approved_pad=PAD_A)
+    assert o.primary == MISMATCH and o.launched_pad is None
+
+
 def test_unknown_decision_raises():
     import pytest
     with pytest.raises(ValueError):

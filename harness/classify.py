@@ -8,8 +8,10 @@ Primary outcomes (first match wins):
   REJECT      broker computed a hash not on the allowlist and did not exec
   EXEC_ERROR  broker approved and called exec, but exec returned an error, or the
               child died by signal, or no ID line came back
-  MISMATCH    a program ran and printed an ID that is not the approved one
-  CORRECT     the approved program ran and printed its ID
+  MISMATCH    a program ran and what it printed is not the approved program: either
+              the ID differs, or the pad hash differs (the file was modified somewhere
+              that does not change the ID, for example a tail rewrite)
+  CORRECT     the approved program ran: ID and pad hash both match
 
 Secondary flags:
   torn        sealed copy was neither all-A nor all-B
@@ -27,16 +29,19 @@ CORRECT = "CORRECT"
 PRIMARY = (REJECT, EXEC_ERROR, MISMATCH, CORRECT)
 
 _ID_RE = re.compile(r"RACEPROOF_ID=(\S)")
+_PAD_RE = re.compile(r"RACEPROOF_PAD=([0-9a-f]{16})")
 
 
 @dataclass
 class Outcome:
     primary: str
     launched_id: str | None
+    launched_pad: str | None = None
     flags: dict = field(default_factory=dict)
 
     def as_row(self) -> dict:
-        row = {"outcome": self.primary, "launched_id": self.launched_id or ""}
+        row = {"outcome": self.primary, "launched_id": self.launched_id or "",
+               "launched_pad": self.launched_pad or ""}
         row.update({k: int(bool(v)) for k, v in self.flags.items()})
         return row
 
@@ -49,11 +54,22 @@ def launched_id(child_output: str | None) -> str | None:
     return m.group(1) if m else None
 
 
-def classify(record: dict, approved_id: str = "A", etxtbsy: bool = False) -> Outcome:
+def launched_pad(child_output: str | None) -> str | None:
+    """The pad hash the launched program printed, or None if absent."""
+    if not child_output:
+        return None
+    m = _PAD_RE.search(child_output)
+    return m.group(1) if m else None
+
+
+def classify(record: dict, approved_id: str = "A", approved_pad: str | None = None,
+             etxtbsy: bool = False) -> Outcome:
     """Classify one broker record.
 
     record: the broker's JSON line as a dict.
     approved_id: the ID printed by the program whose hash is on the allowlist.
+    approved_pad: that program's pad hash from fixtures/layout.txt; when given, a
+        launched program whose pad hash differs is a MISMATCH even if its ID matches.
     etxtbsy: whether the harness saw the updater's write refused with ETXTBSY.
     """
     flags = {
@@ -63,13 +79,16 @@ def classify(record: dict, approved_id: str = "A", etxtbsy: bool = False) -> Out
     }
     decision = record.get("decision")
     if decision == "REJECT":
-        return Outcome(REJECT, None, flags)
+        return Outcome(REJECT, None, None, flags)
     if decision != "APPROVE":
         raise ValueError(f"unknown decision {decision!r}")
 
-    lid = launched_id(record.get("child_output"))
+    out = record.get("child_output")
+    lid, lpad = launched_id(out), launched_pad(out)
     if record.get("exec_errno", 0) != 0 or record.get("signal", 0) != 0 or lid is None:
-        return Outcome(EXEC_ERROR, lid, flags)
+        return Outcome(EXEC_ERROR, lid, lpad, flags)
     if lid != approved_id:
-        return Outcome(MISMATCH, lid, flags)
-    return Outcome(CORRECT, lid, flags)
+        return Outcome(MISMATCH, lid, lpad, flags)
+    if approved_pad is not None and lpad != approved_pad:
+        return Outcome(MISMATCH, lid, lpad, flags)
+    return Outcome(CORRECT, lid, lpad, flags)

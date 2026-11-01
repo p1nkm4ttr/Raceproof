@@ -30,7 +30,7 @@ broker/broker: $(BROKER_SRCS) $(wildcard broker/*.h)
 	$(CC) $(CFLAGS) -o $@ $(BROKER_SRCS) $(LDFLAGS)
 
 updater/updater: $(UPDATER_SRCS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $(UPDATER_SRCS) $(LDFLAGS)
 
 experiment: all
 	python3 harness/run_trials.py --all
