@@ -1,0 +1,14 @@
+# Everything text is LF. Bash scripts with CRLF fail inside WSL with
+# "syntax error" or "command not found", and this repo is edited on Windows.
+* text=auto eol=lf
+*.sh text eol=lf
+*.c text eol=lf
+*.h text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.tex text eol=lf
+*.yaml text eol=lf
+Makefile text eol=lf
+*.pdf binary
+*.png binary
+*.mp4 binary

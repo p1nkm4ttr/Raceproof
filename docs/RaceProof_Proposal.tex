@@ -1,0 +1,117 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{parskip}
+\hypersetup{colorlinks=true, linkcolor=black, urlcolor=blue, citecolor=black}
+\setlist{nosep}
+
+\title{\textbf{RaceProof: Does an AI Tool Launcher Execute the Bytes It Approved?}\\
+\large Measuring check-to-execution (TOCTOU) mismatches across three launch policies on Linux}
+\author{Ahmed Mujtaba (am09620) \and Hamna Munib (hm09929) \and Myrah Hussain (mh10074)}
+\date{CS/CE 232/324 Operating Systems \\ Final Project Proposal \\ October 28, 2026}
+
+\begin{document}
+\maketitle
+
+\section{Research Question}
+How do pathname-based approval, file-descriptor-based approval and sealed-copy approval differ in check-to-execution mismatches under concurrent file replacement and in-place modification, including modification that lands while the sealed copy is being made, and what launch-time cost does each impose?
+
+\textbf{Central claim to test.} A sealed copy is immutable after sealing but is not an atomic snapshot while being copied. We measure how often a write that lands mid-copy produces a torn copy, whether hashing the sealed bytes rejects every torn copy, and how the window grows with executable size. No source we found measures this.
+
+\textbf{Core OS elements:} Concurrency (primary), Security, Memory Management.
+
+\section{Problem Statement}
+An autonomous AI agent or EDR tool runner must check a program before launching it. Between the check and the launch, another process can swap or rewrite the file, so the agent executes bytes it never approved. This is a time-of-check-to-time-of-use (TOCTOU) race. Linux offers primitives that narrow or close this window: an open file descriptor survives a pathname replacement, a memory-backed file created with \texttt{memfd\_create} can be sealed against modification, and \texttt{execveat} can execute directly through a descriptor. These mechanisms are documented \cite{memfd,execveat,noexec}, but we have found no small, reproducible study that compares what each buys an agent launcher against a racing attacker and what it costs. Our contribution is applied: an agent-tool launch design, a reproducible race-test harness, and a measured mismatch-versus-overhead comparison. We do not claim to have invented race-free execution.
+
+\textbf{Where the idea comes from.} File TOCTOU races are a classical, formally catalogued weakness, and no portable deterministic fix exists at the pathname level \cite{cwe367,dean04}, which is why we test under controlled interleavings and report rates with trial counts. The \texttt{fexecve} manual states the gap directly: executing through a descriptor avoids the pathname race but does not stop the file's contents from changing \cite{fexecve}. The copy-seal-execute pattern is prior art from runc's fix for CVE-2019-5736 \cite{runc}, and agent tool runners have begun applying it to scripts; none measures mismatch rate against overhead, and one notes that a sealed clone is not an atomic snapshot while the original is being copied \cite{cmpct}, the interleaving our harness targets. We therefore present RaceProof as a controlled measurement study of an established mechanism, not as a new technique.
+
+\section{Proposed Approach}
+A trusted broker written in C approves and launches a tool behind a simple agent-like request loop, under one of three interchangeable policies (Table~\ref{tab:policies}). A competing updater attacks the approval window by either atomically replacing the pathname (write, then \texttt{rename} over the file) or rewriting the file in place. Two harmless, statically linked ELF fixtures, Program~A and Program~B, each print a distinct ID; only Program~A's SHA-256 hash is allowlisted. An outcome recorder compares the approved hash with the ID printed by whatever actually ran.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{p{2.6cm} p{6.6cm} p{5.2cm}}
+\toprule
+\textbf{Policy} & \textbf{Check and launch sequence} & \textbf{Expected to resist} \\
+\midrule
+Pathname (baseline) & Hash the file at a path; later \texttt{execve} that path. & Nothing. \\
+Open descriptor & Open once; hash through the descriptor; \texttt{execveat} that same descriptor. & Pathname replacement, not in-place rewrites. \\
+Sealed copy & Copy into a private memfd; apply write/shrink/grow seals; hash the sealed bytes; \texttt{execveat} the memfd. & Both replacement and in-place modification. \\
+\bottomrule
+\end{tabular}
+\caption{The three launch policies compared.}
+\label{tab:policies}
+\end{table}
+
+The order in the sealed-copy policy matters: copy, then seal, then validate, then execute. A concurrent change during the copy may yield an invalid copy, which the validator must reject rather than launch.
+
+\textbf{Reproducible races.} The broker and updater first synchronise on barriers so the write lands at one of four chosen points: before the hash, between hash and launch, during the sealed copy, or after sealing. This gives deterministic interleavings for every policy. The barriers are then removed and runs are repeated under uncontrolled timing, with and without CPU stress.
+
+\textbf{The copy-time race.} For the sealed-copy policy the copy is the new window. A write that lands mid-copy can leave the memfd holding part of Program~A and part of Program~B, a \emph{torn copy}. Since hashing happens after sealing, a torn copy should fail validation and be rejected rather than launched; the harness records whether that holds in every trial, and separately whether a torn copy that happens to be a valid ELF could ever run. The updater controls where its write lands by offset, so the torn region can be placed at the ELF header, in the code segment, or past the end of what the copy has already read.
+
+\section{Experimental Plan}
+Each policy runs across five axes: file change (replacement, in-place), interleaving (before hash, between hash and launch, during copy, after seal, uncontrolled), check-to-launch interval (none, short, long), executable size (small, larger static fixtures) and system load (idle, CPU stress, optional local LLM inference), with at least five repetitions per configuration. Per trial we record check/use mismatch, correct launch, rejection, execution error, torn copy (yes/no, and where), median and p99 launch delay, bytes copied and peak memory. Outcomes are classified separately so an execution failure is never confused with prevention.
+
+Expected plots: (1) mismatch rate against check-to-launch gap per policy; (2) launch overhead against executable size per policy; (3) the central result, torn-copy rate and rejection rate for the sealed-copy policy against executable size and system load, under controlled and uncontrolled timing.
+
+\textbf{Minimum result:} three working brokers, two race modes, the copy-time interleaving, and repeated outcome and overhead measurements. \textbf{Stretch:} bind the sealed-copy broker to a local agent's tool-invocation loop and measure the added latency.
+
+\section{Scope and Threat Model}
+The attacker is a process on the same host that targets the approval window. The experiment tests only whether approved executable bytes match the launched program. It does not claim malware-detection accuracy and does not cover scripts, shared libraries, plugins, configuration or runtime behaviour.
+
+\section{Environment and Tools}
+A Linux VM administered by the team (recent kernel, 4 vCPUs, about 8\,GB RAM, no GPU). Broker, updater and fixtures in C (\texttt{gcc -static}); SHA-256 via OpenSSL; harness and repetition driver in Python 3 with \texttt{stress-ng}; plots with matplotlib; GitHub repository with a README. The kernel's executable-memfd policy (\texttt{vm.memfd\_noexec}) will be checked and recorded in week one; we will not weaken the host policy to make a demo work.
+
+\section{Work Division}
+\begin{itemize}
+  \item \textbf{Ahmed Mujtaba:} trusted broker with the three policies, memfd sealing and \texttt{execveat}; kernel feature check; build instructions.
+  \item \textbf{Hamna Munib:} competing updater, barrier-based interleaving control, uncontrolled-timing and CPU-stress runs; outcome recorder and logging format.
+  \item \textbf{Myrah Hussain:} repetition driver, measurement collection, plots and analysis; report in the Part~4 sample format; presentation and demo script.
+\end{itemize}
+Shared: fixture programs, weekly integration test on the VM, final demo rehearsal.
+
+\section{Timeline}
+\begin{tabular}{l p{11.5cm}}
+\toprule
+\textbf{Dates} & \textbf{Milestone} \\
+\midrule
+Oct 26 -- Nov 1 & Read closest prior work, verify memfd/execveat support, feasibility test. \\
+Nov 2 & Submit research question and group; check class register for overlap. \\
+Nov 3 -- 9 & Fixtures built; pathname race reproduced with the harness. \\
+Nov 10 -- 16 & Descriptor and sealed-copy brokers; all three policies compared; copy-time interleaving working. \\
+Nov 17 -- 22 & Torn-copy sweep across size and load; repeated runs; optional agent integration. \\
+Nov 23 -- 26 & Report, README, fresh-VM run of the instructions, rehearsal. Submit Nov 26. \\
+\bottomrule
+\end{tabular}
+
+\section{Risks}
+\begin{itemize}
+  \item \textbf{Executable memfd disabled on the lab machine:} check in week one and use a lab VM whose default allows it.
+  \item \textbf{Execution failure mistaken for prevention:} log rejection, error and mismatch separately; always show the descriptor baseline.
+  \item \textbf{Races too rare under free timing:} barrier-controlled interleavings give deterministic results first; free runs are reported with trial counts.
+  \item \textbf{Stretch integration eats time:} scheduled only after the core experiment works.
+\end{itemize}
+
+\section{Expected Outcome and Demo}
+We expect the pathname policy to mismatch under both attack modes and the descriptor policy to resist replacement only; both follow from the \texttt{fexecve} manual \cite{fexecve}. The open result is the sealed-copy policy: we expect no mismatches, torn copies that appear under mid-copy writes at a rate rising with executable size and load, and every torn copy rejected by the post-seal hash, at a copy cost that grows with size. If a torn copy ever launches, or if the rejection rate is high enough to make the launcher unusable under load, that is the finding. An honestly measured negative result still answers the question.
+
+Demo: the agent approves Program~A; the updater swaps the file; the audience sees Program~B launch under the pathname policy, Program~A under the descriptor policy, and Program~A under the sealed copy. Then the updater writes mid-copy and the sealed-copy broker rejects the torn copy on screen, followed by the measured cost.
+
+\begin{thebibliography}{9}
+\small
+\bibitem{memfd} Linux man-pages, \textit{memfd\_create(2): create an anonymous file}, file sealing section. \url{https://man7.org/linux/man-pages/man2/memfd_create.2.html}
+\bibitem{execveat} Linux man-pages, \textit{execveat(2): execute program relative to a directory file descriptor}. \url{https://man7.org/linux/man-pages/man2/execveat.2.html}
+\bibitem{fexecve} Linux man-pages, \textit{fexecve(3): execute program specified via file descriptor}, NOTES section. \url{https://man7.org/linux/man-pages/man3/fexecve.3.html}
+\bibitem{noexec} Linux kernel documentation, \textit{Executable and non-executable memfds}. \url{https://docs.kernel.org/userspace-api/mfd_noexec.html}
+\bibitem{runc} A. Sarai and C. Brauner, \textit{nsenter: clone /proc/self/exe to avoid exposing host binary to container}, runc commit 0a8e4117, 2019. \url{https://github.com/opencontainers/runc/commit/0a8e4117e7f715d5fbeef398405813ce8e88558b}
+\bibitem{cwe367} MITRE, \textit{CWE-367: Time-of-check Time-of-use (TOCTOU) Race Condition}. \url{https://cwe.mitre.org/data/definitions/367.html}
+\bibitem{dean04} D. Dean and A. J. Hu, ``Fixing Races for Fun and Profit: How to Use access(2),'' \textit{USENIX Security Symposium}, 2004. \url{https://www.usenix.org/conference/13th-usenix-security-symposium/fixing-races-fun-and-profit-how-use-access2}
+\bibitem{cmpct} FCMO-AI, \textit{.CMPCT}, draft pull request 379: kernel-sealed memfd source ownership test. \url{https://github.com/FCMO-AI/.CMPCT/pull/379}
+\end{thebibliography}
+
+\end{document}

@@ -1,0 +1,17 @@
+fixtures/bin/
+broker/broker
+updater/updater
+*.o
+scratch/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
