@@ -4,7 +4,7 @@ Does an AI tool launcher execute the bytes it approved? A controlled measurement
 
 CS/CE 232/324 Operating Systems, final project. Ahmed Mujtaba (am09620), Hamna Munib (hm09929), Myrah Hussain (mh10074).
 
-Status: broker with the pathname and descriptor policies, barrier, updater, fixtures and outcome classifier work; both the pathname race and the in-place-rewrite race against the descriptor policy are reproduced. Sealed-copy policy and the matrix harness are next.
+Status: all three policies, the barrier, the updater, the fixtures and the outcome classifier work. The pathname race, the in-place-rewrite race against the descriptor policy, and a copy-time torn copy caught by the sealed policy's post-seal hash are all reproduced. The matrix harness and plots are next.
 
 ## Broker usage
 
@@ -13,7 +13,7 @@ make broker
 echo "RUN fixtures/bin/prog_a_1m" | ./broker/broker --policy path    # or fd, sealed
 ```
 
-One JSON line per request: the decision, the observed hash, what actually ran (`child_output`), timings and errors. Environment: `RP_GAP_US` inserts a sleep between hash and exec; `RP_BARRIER_DIR` points at a directory holding the `to_updater` and `from_updater` FIFOs for controlled interleavings (see `broker/barrier.h`).
+One JSON line per request: the decision, the observed hash, what actually ran (`child_output`), timings and errors. Environment: `RP_GAP_US` inserts a sleep between hash and exec; `RP_BARRIER_DIR` points at a directory holding the `to_updater` and `from_updater` FIFOs for controlled interleavings (see `broker/barrier.h`). Sealed policy only: `RP_TEAR_AT` is the byte count after which the `mid_copy` stage fires (default half the file); `RP_REF_A` and `RP_REF_B` name the expected pre- and post-attack images, and when set the broker reports whether the sealed copy is torn (matches neither) and the differing byte range.
 
 ## Updater usage
 
