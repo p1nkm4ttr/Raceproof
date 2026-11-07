@@ -35,6 +35,10 @@ updater/updater: $(UPDATER_SRCS)
 experiment: all
 	python3 harness/run_trials.py --all
 
+quick: all
+	python3 harness/run_trials.py --matrix controlled --quick --out results/quick.csv
+	python3 analysis/summarize.py results/quick.csv
+
 plots:
 	python3 analysis/plots.py
 

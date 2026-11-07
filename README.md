@@ -4,7 +4,7 @@ Does an AI tool launcher execute the bytes it approved? A controlled measurement
 
 CS/CE 232/324 Operating Systems, final project. Ahmed Mujtaba (am09620), Hamna Munib (hm09929), Myrah Hussain (mh10074).
 
-Status: all three policies, the barrier, the updater, the fixtures and the outcome classifier work. The pathname race, the in-place-rewrite race against the descriptor policy, and a copy-time torn copy caught by the sealed policy's post-seal hash are all reproduced. The matrix harness and plots are next.
+Status: all three policies, the barrier, the updater, the fixtures, the outcome classifier and the matrix harness work. The controlled matrix at 64 KiB (680 trials) is in `results/prelim_controlled_64k_nov7.csv`. Full-size runs and plots are next.
 
 ## Broker usage
 
@@ -43,10 +43,23 @@ sudo apt install -y build-essential binutils python3 stress-ng python3-matplotli
 ```bash
 make check-env    # must print SUPPORTED; writes results/env.txt
 make fixtures     # builds fixtures/bin/prog_{a,b}_{64k,1m,8m,32m}, allowlist.txt, layout.txt
-make              # builds broker and updater once their sources exist
-make experiment   # runs every matrix in harness/config.yaml (long)
+make              # builds broker and updater
+make quick        # 10-second smoke test: controlled matrix at 64 KiB, 2 reps, then a summary
+make experiment   # runs every matrix in harness/config.json into results/ (about 40 minutes)
 make plots        # regenerates figures from results/*.csv
 ```
+
+Individual matrices and summaries:
+
+```bash
+python3 harness/run_trials.py --matrix controlled --sizes 64k --out results/controlled_64k.csv
+python3 harness/run_trials.py --matrix uncontrolled --reps 100
+python3 harness/run_trials.py --matrix overhead
+python3 analysis/summarize.py results/controlled.csv
+python3 analysis/summarize.py results/overhead.csv --timing
+```
+
+Each CSV row is one launch: the configuration (policy, change mode, barrier stage, region, tear position, gap, size, load), the outcome (`CORRECT`, `MISMATCH`, `REJECT`, `EXEC_ERROR`), the torn and ETXTBSY flags, and every timing and byte count the broker reported. `summarize.py` prints counts per configuration and Wilson 95% intervals; it never prints a rate without its n.
 
 If this clone is on the Windows filesystem (`/mnt/c/...`), that is fine for building. The harness copies fixtures into a scratch directory on WSL's ext4 (default `$HOME/raceproof-scratch`, override with `RP_SCRATCH`) before every trial and refuses to run on anything else, because `rename` and `ETXTBSY` semantics on the Windows bridge are not native Linux.
 

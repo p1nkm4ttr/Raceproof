@@ -1,0 +1,31 @@
+{
+  "sizes": ["64k", "1m", "8m", "32m"],
+  "loads": ["idle", "stress"],
+  "gaps_us": {"none": 0, "short": 200, "long": 5000},
+  "regions": ["header", "text", "tail"],
+  "matrices": {
+    "controlled": {
+      "reps": 10,
+      "policies": {
+        "path":   {"stages": ["pre_hash", "post_hash"]},
+        "fd":     {"stages": ["pre_hash", "post_hash"]},
+        "sealed": {"stages": ["pre_hash", "mid_copy", "post_seal"]}
+      },
+      "changes": ["replace", "rewrite"],
+      "tears_for_mid_copy_rewrite": ["before", "mid", "after"],
+      "tear_for_mid_copy_replace": "half"
+    },
+    "uncontrolled": {
+      "reps": 100,
+      "policies": ["path", "fd", "sealed"],
+      "changes": ["replace", "rewrite"],
+      "rewrite_region": "text",
+      "gaps": ["none", "short", "long"],
+      "interval_us": "100:400"
+    },
+    "overhead": {
+      "reps": 50,
+      "policies": ["path", "fd", "sealed"]
+    }
+  }
+}
