@@ -16,15 +16,14 @@ void policy_path(const char *path, char **argv) {
     barrier_stage("pre_hash");
     long t0 = now_us();
     int fd = open(path, O_RDONLY | O_CLOEXEC);
-    if (fd < 0 || !elf_magic_ok(fd) || hash_fd(fd, st.observed_hex, &st.bytes_hashed) < 0) {
-        st.decision = 1; st.t_check_us = now_us() - t0;
-        send_status(&st); _exit(3);
-    }
+    if (fd < 0) { st.decision = RP_ERROR; st.exec_errno = errno; send_status(&st); _exit(EXIT_ERROR); }
+    if (!elf_magic_ok(fd)) { st.decision = RP_REJECT; st.t_check_us = now_us() - t0; send_status(&st); _exit(EXIT_REJECT); }
+    if (hash_fd(fd, st.observed_hex, &st.bytes_hashed) < 0) { st.decision = RP_ERROR; st.exec_errno = errno; send_status(&st); _exit(EXIT_ERROR); }
     close(fd);                                   /* the check is over; only the name remains */
     st.t_check_us = now_us() - t0;
-    st.decision = allowlist_has(st.observed_hex) ? 0 : 1;
+    st.decision = allowlist_has(st.observed_hex) ? RP_APPROVE : RP_REJECT;
     send_status(&st);
-    if (st.decision) _exit(3);
+    if (st.decision) _exit(EXIT_REJECT);
 
     barrier_stage("post_hash");
     apply_gap();

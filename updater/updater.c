@@ -30,6 +30,7 @@
 #include <errno.h>
 #include <time.h>
 #include <libgen.h>
+#include <signal.h>
 #include <sys/stat.h>
 
 static const char *mode = NULL, *at = NULL, *target = NULL, *payload = NULL, *alt = NULL;
@@ -37,6 +38,10 @@ static const char *region = NULL, *layout = "fixtures/layout.txt";
 static long offset = -1, len = -1, lo_us = 50, hi_us = 500;
 static int once = 0, quiet = 0;
 static unsigned char *pay = NULL, *altbuf = NULL; static long paylen = 0, altlen = 0;
+static volatile sig_atomic_t stop = 0;
+static long n_writes = 0, n_etxtbsy = 0, n_errors = 0;   /* summary printed on exit in free mode */
+
+static void on_term(int sig) { (void)sig; stop = 1; }
 
 static long now_us(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec * 1000000L + ts.tv_nsec / 1000; }
 
@@ -49,7 +54,9 @@ static unsigned char *slurp(const char *file, long *n) {
 }
 
 static void emit(const char *action, long off, long l, int err, long t) {
-    if (quiet) return;
+    n_writes++;
+    if (err == ETXTBSY) n_etxtbsy++; else if (err) n_errors++;
+    if (quiet) return;      /* in free mode always use --quiet: an undrained stdout pipe blocks the attack */
     printf("{\"action\":\"%s\",\"offset\":%ld,\"len\":%ld,\"errno\":%d,\"errstr\":\"%s\",\"t_us\":%ld}\n",
            action, off, l, err, err ? strerror(err) : "", t);
     fflush(stdout);
@@ -129,12 +136,19 @@ static void serve_barrier(void) {
 
 static void run_free(void) {
     srand((unsigned)(now_us() ^ getpid()));
-    for (;;) {
+    signal(SIGTERM, on_term); signal(SIGINT, on_term);
+    long t0 = now_us();
+    while (!stop) {
         act(pay, paylen, mode);
         usleep(lo_us + rand() % (hi_us - lo_us + 1));
+        if (stop) break;
         act(altbuf, altlen, strcmp(mode, "replace") == 0 ? "restore" : "rewrite_alt");
         usleep(lo_us + rand() % (hi_us - lo_us + 1));
     }
+    /* One summary line, whatever --quiet says, so the harness can count writes without a pipe that fills. */
+    printf("{\"summary\":1,\"writes\":%ld,\"etxtbsy\":%ld,\"errors\":%ld,\"run_us\":%ld}\n",
+           n_writes, n_etxtbsy, n_errors, now_us() - t0);
+    fflush(stdout);
 }
 
 int main(int argc, char **argv) {

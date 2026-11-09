@@ -19,6 +19,10 @@ log "arch: $(uname -m)"
 log "nproc: $(nproc)"
 log "mem_total_kb: $(awk '/MemTotal/{print $2}' /proc/meminfo)"
 if grep -qi microsoft /proc/version; then log "wsl: yes"; else log "wsl: no"; fi
+log "cpu: $(awk -F': ' '/model name/{print $2; exit}' /proc/cpuinfo)"
+if grep -qw sha_ni /proc/cpuinfo; then log "cpu_sha_ni: yes"; else log "cpu_sha_ni: no"; fi
+log "openssl: $(openssl version 2>/dev/null || echo absent)"
+if [ -r /usr/include/openssl/evp.h ]; then log "libssl-dev: present (make broker HASH=openssl available)"; else log "libssl-dev: absent (default plain-C hash only)"; fi
 
 if [ -r /proc/sys/vm/memfd_noexec ]; then
   noexec=$(cat /proc/sys/vm/memfd_noexec)
@@ -58,7 +62,13 @@ int main(int argc, char **argv) {
   const char *target = argc > 1 ? argv[1] : "/bin/true";
   int src = open(target, O_RDONLY);
   if (src < 0) { printf("probe: open %s failed: %s\n", target, strerror(errno)); return 2; }
-  int m = syscall(SYS_memfd_create, "rp_probe", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+  /* Same creation path as broker/policy_sealed.c: ask for MFD_EXEC, fall back on kernels that do not know it. */
+#ifndef MFD_EXEC
+#define MFD_EXEC 0x0010U
+#endif
+  int m = syscall(SYS_memfd_create, "rp_probe", MFD_CLOEXEC | MFD_ALLOW_SEALING | MFD_EXEC);
+  if (m < 0 && errno == EINVAL) { printf("probe: MFD_EXEC unknown to this kernel, retrying without it\n");
+    m = syscall(SYS_memfd_create, "rp_probe", MFD_CLOEXEC | MFD_ALLOW_SEALING); }
   if (m < 0) { printf("probe: memfd_create failed: %s\n", strerror(errno)); return 2; }
   char b[65536]; ssize_t n;
   while ((n = read(src, b, sizeof b)) > 0) if (write(m, b, n) != n) { printf("probe: write failed\n"); return 2; }

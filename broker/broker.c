@@ -23,7 +23,13 @@
 #include <sys/wait.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
+#ifdef RP_HASH_OPENSSL
+#include <openssl/evp.h>
+const char *hash_impl = "openssl-evp";
+#else
 #include "sha256.h"
+const char *hash_impl = "vendored-c";
+#endif
 
 #define MAX_ALLOW 256
 static char allow[MAX_ALLOW][65];
@@ -41,6 +47,40 @@ int allowlist_has(const char *hex) {
     return 0;
 }
 
+/* SHA-256 of the whole file behind fd, by pread from offset 0 so the descriptor's own
+ * offset is untouched. Two builds: the vendored plain-C implementation (default) and
+ * OpenSSL's EVP (make HASH=openssl), which uses the CPU's SHA-NI instructions when present.
+ * Both produce the same digest; the record names which one ran.
+ * hash_init runs once in the parent before the request loop. OpenSSL 3 loads its default
+ * provider and reads openssl.cnf lazily on the first digest, which costs about half a
+ * millisecond; done in the parent, every forked child inherits the initialised library
+ * and the fetched method instead of paying that on each launch. */
+#ifdef RP_HASH_OPENSSL
+static EVP_MD *sha256_md;
+static void hash_init(void) {
+    OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL);
+    sha256_md = EVP_MD_fetch(NULL, "SHA256", NULL);
+    if (!sha256_md) { fprintf(stderr, "broker: cannot fetch SHA256 from OpenSSL\n"); exit(2); }
+}
+int hash_fd(int fd, char hex[65], long *bytes) {
+    EVP_MD_CTX *c = EVP_MD_CTX_new();
+    if (!c || EVP_DigestInit_ex(c, sha256_md, NULL) != 1) { EVP_MD_CTX_free(c); errno = ENOMEM; return -1; }
+    unsigned char buf[65536]; off_t off = 0; ssize_t n; long total = 0;
+    while ((n = pread(fd, buf, sizeof buf, off)) > 0) {
+        if (EVP_DigestUpdate(c, buf, (size_t)n) != 1) { EVP_MD_CTX_free(c); errno = EIO; return -1; }
+        off += n; total += n;
+    }
+    if (n < 0) { int e = errno; EVP_MD_CTX_free(c); errno = e; return -1; }
+    unsigned char d[32]; unsigned int dl = 0;
+    if (EVP_DigestFinal_ex(c, d, &dl) != 1 || dl != 32) { EVP_MD_CTX_free(c); errno = EIO; return -1; }
+    EVP_MD_CTX_free(c);
+    for (int i = 0; i < 32; i++) { hex[2*i] = "0123456789abcdef"[d[i] >> 4]; hex[2*i+1] = "0123456789abcdef"[d[i] & 15]; }
+    hex[64] = 0;
+    if (bytes) *bytes = total;
+    return 0;
+}
+#else
+static void hash_init(void) {}
 int hash_fd(int fd, char hex[65], long *bytes) {
     sha256_ctx c; sha256_init(&c);
     unsigned char buf[65536]; off_t off = 0; ssize_t n; long total = 0;
@@ -50,6 +90,7 @@ int hash_fd(int fd, char hex[65], long *bytes) {
     if (bytes) *bytes = total;
     return 0;
 }
+#endif
 
 int elf_magic_ok(int fd) {
     unsigned char m[4];
@@ -130,8 +171,18 @@ static void run_one(const char *policy, char **argv, int timeout_ms) {
     out[outlen] = 0;
     close(op[0]);
 
+    /* The deadline covers the whole child lifetime: a child that closed stdout but keeps
+     * running is killed when the remaining budget runs out. */
     int wstatus = 0; struct rusage ru; memset(&ru, 0, sizeof ru);
-    wait4(pid, &wstatus, 0, &ru);
+    for (;;) {
+        pid_t w = wait4(pid, &wstatus, WNOHANG, &ru);
+        if (w == pid) break;
+        if (w < 0) { break; }
+        struct timespec nowts; clock_gettime(CLOCK_MONOTONIC, &nowts);
+        long rem_ms = (deadline.tv_sec - nowts.tv_sec) * 1000 + (deadline.tv_nsec - nowts.tv_nsec) / 1000000;
+        if (rem_ms <= 0) { timed_out = 1; kill(pid, SIGKILL); wait4(pid, &wstatus, 0, &ru); break; }
+        usleep(rem_ms > 2 ? 1000 : 200);
+    }
     long t_end = now_us();
 
     /* Last status record wins (the child sends one after the decision, another on exec failure). */
@@ -142,12 +193,12 @@ static void run_one(const char *policy, char **argv, int timeout_ms) {
 
     int exit_status = WIFEXITED(wstatus) ? WEXITSTATUS(wstatus) : -1;
     int sig = WIFSIGNALED(wstatus) ? WTERMSIG(wstatus) : 0;
-    const char *decision = !got ? "NONE" : st.decision == 0 ? "APPROVE" : "REJECT";
+    const char *decision = !got ? "NONE" : st.decision == RP_APPROVE ? "APPROVE" : st.decision == RP_REJECT ? "REJECT" : "ERROR";
 
     /* Trim trailing newline for a cleaner record. */
     while (outlen && (out[outlen-1] == '\n' || out[outlen-1] == '\r')) out[--outlen] = 0;
 
-    printf("{\"policy\":\"%s\",\"path\":", policy); json_str(stdout, path);
+    printf("{\"policy\":\"%s\",\"hash_impl\":\"%s\",\"path\":", policy, hash_impl); json_str(stdout, path);
     printf(",\"observed_hash\":\"%s\",\"allowlisted\":%s,\"decision\":\"%s\"",
            st.observed_hex, (got && st.decision == 0) ? "true" : "false", decision);
     printf(",\"exec_errno\":%d,\"exec_errstr\":", st.exec_errno); json_str(stdout, st.exec_errno ? strerror(st.exec_errno) : "");
@@ -155,8 +206,8 @@ static void run_one(const char *policy, char **argv, int timeout_ms) {
     printf(",\"t_check_us\":%ld,\"t_copy_us\":%ld,\"t_total_us\":%ld,\"t_wait_us\":%ld",
            st.t_check_us, st.t_copy_us, t_first < 0 ? -1 : t_first - t_req, t_end - t_req);
     printf(",\"bytes_hashed\":%ld,\"bytes_copied\":%ld,\"peak_rss_kb\":%ld", st.bytes_hashed, st.bytes_copied, ru.ru_maxrss);
-    printf(",\"seal_ok\":%d,\"torn\":%d,\"torn_first\":%ld,\"torn_last\":%ld,\"gap_us\":%ld}\n",
-           st.seal_ok, st.torn, st.torn_first, st.torn_last, gap_us);
+    printf(",\"seal_ok\":%d,\"torn_checked\":%d,\"torn\":%d,\"torn_first\":%ld,\"torn_last\":%ld,\"gap_us\":%ld}\n",
+           st.seal_ok, st.torn_checked, st.torn, st.torn_first, st.torn_last, gap_us);
     fflush(stdout);
 }
 
@@ -175,6 +226,7 @@ int main(int argc, char **argv) {
     if (load_allowlist(allowfile) <= 0) { fprintf(stderr, "broker: allowlist is empty\n"); return 2; }
     const char *g = getenv("RP_GAP_US"); if (g) gap_us = atol(g);
     signal(SIGPIPE, SIG_IGN);
+    hash_init();
 
     char line[8192];
     while (fgets(line, sizeof line, stdin)) {

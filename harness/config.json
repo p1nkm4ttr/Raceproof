@@ -19,7 +19,7 @@
       "reps": 100,
       "policies": ["path", "fd", "sealed"],
       "changes": ["replace", "rewrite"],
-      "rewrite_region": "text",
+      "rewrite_regions": ["text", "tail"],
       "gaps": ["none", "short", "long"],
       "interval_us": "100:400"
     },

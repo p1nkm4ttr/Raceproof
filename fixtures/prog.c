@@ -4,8 +4,10 @@
  * Prints "RACEPROOF_ID=<PROG_ID> PID=<pid>\n" to stdout, then a second line
  * "RACEPROOF_PAD=<fnv1a-64 of the padding, hex>\n", and exits 0.
  * The ID line goes out first so launch latency (time to first byte) does not
- * include the pad hash. The pad hash is the ground truth that catches a rewrite
- * anywhere in the file, not only in the code that prints the ID.
+ * include the pad hash. Together the two lines attest the two regions the
+ * experiment's attacks target: the code that prints the ID, and the padding.
+ * They do not attest the ELF header or any other byte; this is a ground truth
+ * for the chosen A/B attacks, not a general integrity check.
  * Build: gcc -O2 -static -nostdlib -nostartfiles -fno-stack-protector \
  *        -DPROG_ID='A' -DPAD_BYTES=1048576 -o prog_a_1m prog.c
  * x86-64 Linux only (raw syscalls). */

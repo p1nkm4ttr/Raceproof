@@ -13,12 +13,19 @@ import math
 import statistics
 from collections import Counter, defaultdict
 
-OUTCOMES = ["CORRECT", "MISMATCH", "REJECT", "EXEC_ERROR"]
+OUTCOMES = ["CORRECT", "MISMATCH", "REJECT", "EXEC_ERROR", "HARNESS_ERROR"]
 DEFAULT_KEYS = {
     "controlled": ["policy", "change", "stage", "region", "tear", "size", "load"],
-    "uncontrolled": ["policy", "change", "gap", "size", "load"],
+    "uncontrolled": ["policy", "change", "region", "gap", "size", "load"],
     "overhead": ["policy", "size", "load"],
 }
+
+
+def p99(sorted_vals):
+    """Nearest-rank 99th percentile: the ceil(0.99 n)-th smallest value."""
+    if not sorted_vals:
+        return 0
+    return sorted_vals[min(len(sorted_vals) - 1, max(0, math.ceil(0.99 * len(sorted_vals)) - 1))]
 
 
 def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
@@ -33,7 +40,7 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
 
 def fmt_rate(k, n):
     lo, hi = wilson(k, n)
-    return f"{k}/{n} ({100*k/n:5.1f}%, CI {100*lo:4.0f}-{100*hi:3.0f})" if n else "0/0"
+    return f"{k}/{n} ({100*k/n:5.1f}%, 95% CI {100*lo:.1f}-{100*hi:.1f})" if n else "0/0"
 
 
 def main():
@@ -59,7 +66,7 @@ def main():
     if args.timing:
         print(f"{head} |    n | total med/p99 us | check med us | copy med us | bytes_copied")
     else:
-        print(f"{head} |    n | MISMATCH | REJECT | CORRECT | EXEC_ERR | torn | etxtbsy")
+        print(f"{head} |    n | MISMATCH | REJECT | CORRECT | EXEC_ERR | HARN_ERR | torn | etxtbsy")
     for key in sorted(groups):
         g = groups[key]
         n = len(g)
@@ -69,13 +76,12 @@ def main():
             chk = [int(r["t_check_us"]) for r in g if r["t_check_us"]]
             cp = [int(r["t_copy_us"]) for r in g if r["t_copy_us"]]
             bc = [int(r["bytes_copied"]) for r in g if r["bytes_copied"]]
-            p99 = sorted(tot)[max(0, int(0.99 * len(tot)) - 1)] if tot else 0
-            print(f"{label} | {n:4} | {statistics.median(tot) if tot else 0:8.0f}/{p99:8.0f} | {statistics.median(chk) if chk else 0:12.0f} | {statistics.median(cp) if cp else 0:11.0f} | {max(bc) if bc else 0}")
+            print(f"{label} | {n:4} | {statistics.median(tot) if tot else 0:8.0f}/{p99(sorted(tot)):8.0f} | {statistics.median(chk) if chk else 0:12.0f} | {statistics.median(cp) if cp else 0:11.0f} | {max(bc) if bc else 0}")
         else:
             c = Counter(r["outcome"] for r in g)
             torn = sum(int(r["torn"] or 0) for r in g)
             etx = sum(int(r["etxtbsy"] or 0) for r in g)
-            print(f"{label} | {n:4} | {c['MISMATCH']:8} | {c['REJECT']:6} | {c['CORRECT']:7} | {c['EXEC_ERROR']:8} | {torn:4} | {etx:7}")
+            print(f"{label} | {n:4} | {c['MISMATCH']:8} | {c['REJECT']:6} | {c['CORRECT']:7} | {c['EXEC_ERROR']:8} | {c['HARNESS_ERROR']:8} | {torn:4} | {etx:7}")
 
     if not args.timing:
         print("\nHeadline rates (Wilson 95% CI):")
@@ -86,7 +92,10 @@ def main():
             n = len(g)
             mis = sum(r["outcome"] == "MISMATCH" for r in g)
             torn = sum(int(r["torn"] or 0) for r in g)
-            print(f"  {pol:6} mismatch {fmt_rate(mis, n)}   torn {fmt_rate(torn, n)}")
+            herr = sum(r["outcome"] == "HARNESS_ERROR" for r in g)
+            print(f"  {pol:6} mismatch {fmt_rate(mis, n)}   torn {fmt_rate(torn, n)}   harness errors {herr}")
+        runs = sorted({(r.get("run_id", ""), r.get("git_rev", "")) for r in rows})
+        print("\nRuns in this file:", ", ".join(f"{a} @ {b}" for a, b in runs) or "(no run metadata)")
 
 
 if __name__ == "__main__":

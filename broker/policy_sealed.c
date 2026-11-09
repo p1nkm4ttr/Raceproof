@@ -12,11 +12,12 @@
  * Stages: pre_hash (before the copy starts), mid_copy (after RP_TEAR_AT bytes,
  * default half the file), post_seal (after sealing, before the hash).
  *
- * Instrumentation (controlled matrix only): if RP_REF_A and RP_REF_B name the
- * two fixture files, the child compares the sealed copy against both after the
- * decision and reports torn / torn_first / torn_last. That comparison costs
- * time, so t_pre_exec_us is reported excluding it; the overhead matrix runs
- * without RP_REF_* set and is unaffected. */
+ * Instrumentation: if RP_REF_A and RP_REF_B name the expected pre- and
+ * post-attack images, the child compares the sealed copy against both after the
+ * decision and reports torn / torn_first / torn_last. That comparison runs
+ * before exec, so t_total_us includes it whenever the references are set;
+ * t_copy_us and t_check_us never do. Launch-cost measurements come from the
+ * overhead matrix, which runs without RP_REF_* set. */
 #define _GNU_SOURCE
 #include "policy.h"
 #include "barrier.h"
@@ -60,14 +61,24 @@ static long copy_with_tear(int src, int mfd, long tear_at) {
     return copied;
 }
 
-/* Compare the sealed copy with reference A and B; set torn fields. */
+/* Compare the sealed copy with the pre-attack (A) and post-attack (B) references.
+ * Sets torn_checked=1 only when both references were read; a copy whose length
+ * differs from a reference cannot equal it. */
 static void torn_analysis(int mfd, long len, struct status *st) {
     const char *ra = getenv("RP_REF_A"), *rb = getenv("RP_REF_B");
+    st->torn_checked = 0;
     if (!ra || !rb) return;
     int fa = open(ra, O_RDONLY | O_CLOEXEC), fb = open(rb, O_RDONLY | O_CLOEXEC);
-    if (fa < 0 || fb < 0) return;
+    if (fa < 0 || fb < 0) {
+        fprintf(stderr, "broker: torn analysis skipped, cannot open references: %s\n", strerror(errno));
+        if (fa >= 0) close(fa);
+        if (fb >= 0) close(fb);
+        return;
+    }
+    struct stat sa, sb2;
+    if (fstat(fa, &sa) < 0 || fstat(fb, &sb2) < 0) { close(fa); close(fb); return; }
     unsigned char m[CHUNK], a[CHUNK], b[CHUNK];
-    int all_a = 1, all_b = 1; long first = -1, last = -1;
+    int all_a = (sa.st_size == len), all_b = (sb2.st_size == len); long first = -1, last = -1;
     for (off_t off = 0; off < len; off += CHUNK) {
         ssize_t nm = pread(mfd, m, CHUNK, off), na = pread(fa, a, CHUNK, off), nb = pread(fb, b, CHUNK, off);
         if (nm <= 0) break;
@@ -78,6 +89,7 @@ static void torn_analysis(int mfd, long len, struct status *st) {
         if (nb != nm || memcmp(m, b, nm) != 0) all_b = 0;
     }
     close(fa); close(fb);
+    st->torn_checked = 1;
     st->torn = (!all_a && !all_b);
     st->torn_first = all_a ? -1 : first;
     st->torn_last = all_a ? -1 : last;
@@ -90,38 +102,44 @@ void policy_sealed(const char *path, char **argv) {
     barrier_stage("pre_hash");
     long t0 = now_us();
     int src = open(path, O_RDONLY | O_CLOEXEC);
-    if (src < 0) { st.decision = 1; send_status(&st); _exit(3); }
-    struct stat sb; fstat(src, &sb);
+    if (src < 0) { st.decision = RP_ERROR; st.exec_errno = errno; send_status(&st); _exit(EXIT_ERROR); }
+    struct stat sb;
+    if (fstat(src, &sb) < 0) { st.decision = RP_ERROR; st.exec_errno = errno; send_status(&st); _exit(EXIT_ERROR); }
 
     long tear_at = -1;
     const char *env = getenv("RP_TEAR_AT");
     if (getenv("RP_BARRIER_DIR")) tear_at = (env && *env) ? atol(env) : sb.st_size / 2;
 
     int mfd = make_memfd();
-    if (mfd < 0) { st.decision = 1; st.exec_errno = errno; send_status(&st); _exit(3); }
+    if (mfd < 0) { st.decision = RP_ERROR; st.exec_errno = errno; send_status(&st); _exit(EXIT_ERROR); }
 
     long copied = copy_with_tear(src, mfd, tear_at);
+    int copy_errno = errno;
     close(src);                                      /* the original is never touched again */
-    if (copied < 0) { st.decision = 1; send_status(&st); _exit(3); }
+    if (copied < 0) { st.decision = RP_ERROR; st.exec_errno = copy_errno; send_status(&st); _exit(EXIT_ERROR); }
     st.bytes_copied = copied;
 
-    if (fcntl(mfd, F_ADD_SEALS, RP_SEALS) < 0) { st.decision = 1; st.exec_errno = errno; send_status(&st); _exit(3); }
+    if (fcntl(mfd, F_ADD_SEALS, RP_SEALS) < 0) { st.decision = RP_ERROR; st.exec_errno = errno; send_status(&st); _exit(EXIT_ERROR); }
     int seals = fcntl(mfd, F_GET_SEALS);
     st.seal_ok = (seals >= 0 && (seals & RP_SEALS) == RP_SEALS);
+    if (!st.seal_ok) { st.decision = RP_ERROR; st.exec_errno = EIO; send_status(&st); _exit(EXIT_ERROR); }
     st.t_copy_us = now_us() - t0;
     barrier_stage("post_seal");
 
     long t1 = now_us();
-    if (!st.seal_ok || !elf_magic_ok(mfd) || hash_fd(mfd, st.observed_hex, &st.bytes_hashed) < 0) {
-        st.decision = 1; st.t_check_us = now_us() - t1;
+    if (!elf_magic_ok(mfd)) {                        /* content failed validation: a rejection, not an error */
+        st.decision = RP_REJECT; st.t_check_us = now_us() - t1;
         torn_analysis(mfd, copied, &st);
-        send_status(&st); _exit(3);
+        send_status(&st); _exit(EXIT_REJECT);
+    }
+    if (hash_fd(mfd, st.observed_hex, &st.bytes_hashed) < 0) {
+        st.decision = RP_ERROR; st.exec_errno = errno; send_status(&st); _exit(EXIT_ERROR);
     }
     st.t_check_us = now_us() - t1;
-    st.decision = allowlist_has(st.observed_hex) ? 0 : 1;
+    st.decision = allowlist_has(st.observed_hex) ? RP_APPROVE : RP_REJECT;
     torn_analysis(mfd, copied, &st);                 /* instrumentation; not part of the decision */
     send_status(&st);
-    if (st.decision) _exit(3);
+    if (st.decision) _exit(EXIT_REJECT);
 
     apply_gap();
     syscall(SYS_execveat, mfd, "", argv, environ, AT_EMPTY_PATH);   /* the sealed bytes we hashed */

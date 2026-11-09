@@ -93,6 +93,26 @@ def test_missing_pad_line_with_expected_pad_is_mismatch():
     assert o.primary == MISMATCH and o.launched_pad is None
 
 
+def test_broker_error_is_exec_error_never_reject():
+    o = classify(rec(decision="ERROR", exec_errno=2, child_output=""))
+    assert o.primary == EXEC_ERROR and o.flags["broker_error"] is True
+    assert o.primary != REJECT
+
+
+def test_etxtbsy_flag_from_exec_errno():
+    o = classify(rec(exec_errno=26, child_output=""))
+    assert o.primary == EXEC_ERROR and o.flags["etxtbsy"] is True
+
+
+def test_etxtbsy_flag_not_set_for_other_errno():
+    assert not classify(rec(exec_errno=8, child_output="")).flags["etxtbsy"]
+
+
+def test_string_fields_from_csv_are_tolerated():
+    o = classify(rec(exec_errno="0", signal="0", torn="1", policy="sealed"))
+    assert o.primary == CORRECT and o.flags["torn"] is True
+
+
 def test_unknown_decision_raises():
     import pytest
     with pytest.raises(ValueError):
