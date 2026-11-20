@@ -1,4 +1,4 @@
-Launch cost by policy, size and load, no attacker. Data: `run2b_overhead.csv`, `run3b_openssl_overhead.csv`.
+Launch cost by policy, size and load, no attacker. Data: `run2b_overhead.csv`, `run3b_openssl_overhead.csv`. p99 is nearest-rank, so with n = 50 it is the slowest launch. Copy share is the copy's part of a sealed launch, not the sealed policy's extra cost over another policy.
 
 | Hash | Policy | Size | Load | n | hash median ms | copy median ms | total median ms | total p99 ms | copy share | bytes copied |
 | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

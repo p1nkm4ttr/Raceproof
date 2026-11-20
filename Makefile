@@ -3,7 +3,7 @@
 #   make check-env  verify kernel support for executable sealed memfds; writes results/env.txt
 #   make fixtures   build prog_a / prog_b at four sizes, allowlist.txt, layout.txt
 #   make experiment run every matrix in harness/config.json into results/
-#   make plots      regenerate figures from results/*.csv
+#   make plots      regenerate figures from results/*.csv (report versions in report/figures/paper/)
 #   make broker HASH=openssl   broker with OpenSSL SHA-256 (SHA-NI) instead of the vendored one
 #   make clean
 
@@ -54,11 +54,14 @@ experiment: all
 	python3 harness/run_trials.py --all --run-id $(RUN)
 
 quick: all
+	rm -f results/quick.csv
 	python3 harness/run_trials.py --matrix controlled --quick --out results/quick.csv
 	python3 analysis/summarize.py results/quick.csv
 
+# Draws the published datasets (run 2, run2b, run3b), not whatever ran last. For a new run:
+#   python3 analysis/plots.py --run <run_id> --out <dir>
 plots:
-	python3 analysis/plots.py --run run2 --overhead results/run2b_overhead.csv --overhead-fast results/run3b_openssl_overhead.csv
+	python3 analysis/plots.py --run run2 --overhead results/run2b_overhead.csv --overhead-fast results/run3b_openssl_overhead.csv --paper
 
 clean:
 	rm -rf fixtures/bin broker/broker broker/.hash_* updater/updater
