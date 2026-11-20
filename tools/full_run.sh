@@ -121,7 +121,11 @@ main() {
 
   echo "== finished $(date -Iseconds), $(( ($(date +%s) - t0) / 60 )) minutes =="
   echo
-  python3 analysis/hash_rate.py results/"${RUN}"_*.csv
+  # Only this run's own files: a wildcard on the run id would also match another run whose id
+  # merely starts with the same text.
+  local -a checkfiles=("results/${RUN}_controlled.csv" "results/${RUN}_uncontrolled.csv" "results/${RUN}_overhead.csv")
+  if [ $ssl_ran -eq 1 ]; then checkfiles+=("results/${RUN}_openssl_overhead.csv"); fi
+  python3 analysis/hash_rate.py "${checkfiles[@]}"
   check_rc=$?
   echo
   echo "Next: read the hash-rate check above, then"

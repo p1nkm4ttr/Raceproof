@@ -10,7 +10,8 @@ not. For every file this prints the median rate in MB/s per size and load for ea
 and judges each CPU-idle cell:
 
   UNEVEN      the fastest policy's median is more than 1.5 times the slowest's
-  INCOMPLETE  a policy has no hash timings in the cell, so there is nothing to compare
+  INCOMPLETE  a policy has no usable hash timing in the cell (missing, zero, or every launch
+              a harness error), so there is nothing to compare
   FEW         fewer than 10 launches for some policy: printed, not judged
 
 Stress cells are printed but not judged, because twelve CPU hogs make them uneven by design.
@@ -42,18 +43,25 @@ EVEN, UNEVEN_OVERHEAD, NOT_COMPARABLE, TOO_FEW = 0, 1, 2, 3
 
 
 def rates(path):
-    """{(matrix, hash_impl, load, size): {policy: [MB/s, ...]}} for rows that hashed something."""
+    """{(matrix, hash_impl, load, size): {policy: [MB/s, ...]}}.
+
+    A cell exists as soon as one launch belongs to it, whether or not that launch has a usable
+    hash time, so a cell whose timings are all missing or zero is reported as INCOMPLETE
+    instead of vanishing from the check."""
     cells = defaultdict(lambda: defaultdict(list))
     with open(path, newline="") as f:
         for r in csv.DictReader(f):
+            if r.get("policy") not in POLICIES:
+                continue
+            key = (r.get("matrix", ""), r.get("hash_impl") or "vendored-c", r.get("load", ""), r.get("size", ""))
+            cell = cells[key]
             try:
                 us, n = int(r["t_check_us"]), int(r["bytes_hashed"])
             except (KeyError, ValueError, TypeError):
                 continue
-            if us <= 0 or n <= 0 or r.get("outcome") == "HARNESS_ERROR" or r.get("policy") not in POLICIES:
+            if us <= 0 or n <= 0 or r.get("outcome") == "HARNESS_ERROR":
                 continue
-            key = (r.get("matrix", ""), r.get("hash_impl") or "vendored-c", r.get("load", ""), r.get("size", ""))
-            cells[key][r["policy"]].append(n / us)        # bytes per microsecond is MB/s
+            cell[r["policy"]].append(n / us)              # bytes per microsecond is MB/s
     return cells
 
 
@@ -119,9 +127,13 @@ def check(files):
             print(f"NOT JUDGED {f}: {c['few']} idle cell(s) have fewer than {MIN_N} launches per policy; {c['judged']} judged.")
         else:
             extra = f"; {c['few']} more not judged (fewer than {MIN_N} launches)" if c["few"] else ""
-            print(f"ok {f}: {c['judged']} idle cell(s) judged, policies within a factor of {UNEVEN}{extra}")
-        if c["uneven_other"]:
-            print(f"note {f}: {c['uneven_other']} idle cell(s) UNEVEN outside the overhead matrix; outcomes are unaffected, the machine was disturbed.")
+            if c["uneven_other"]:
+                print(f"note {f}: {c['judged']} idle cell(s) judged, {c['uneven_other']} of them UNEVEN, none in an overhead matrix. "
+                      f"Outcomes are unaffected; the machine was disturbed{extra}")
+            else:
+                print(f"ok {f}: {c['judged']} idle cell(s) judged, policies within a factor of {UNEVEN}{extra}")
+        if c["uneven_other"] and v != EVEN:
+            print(f"note {f}: {c['uneven_other']} idle cell(s) UNEVEN outside the overhead matrix as well.")
     for worst in (UNEVEN_OVERHEAD, NOT_COMPARABLE, TOO_FEW):
         if worst in verdicts:
             return worst

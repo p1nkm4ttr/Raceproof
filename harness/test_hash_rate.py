@@ -44,6 +44,19 @@ def test_uneven_cell_outside_overhead_is_reported_not_failed(tmp_path, capsys):
     assert hash_rate.check([f]) == 0
     out = capsys.readouterr().out
     assert "UNEVEN" in out and AGREE not in out
+    assert "within a factor" not in out and "\nok " not in "\n" + out      # no claim of agreement for an uneven file
+
+
+def test_a_cell_with_no_usable_hash_time_is_incomplete_not_invisible(tmp_path, capsys):
+    rows = cell(size="64k") + [dict(r, t_check_us=0) for r in cell(size="1m")]
+    assert hash_rate.check([write(tmp_path / "a.csv", rows)]) == 2
+    out = capsys.readouterr().out
+    assert "INCOMPLETE" in out and "NOT CHECKED" in out and AGREE not in out
+
+
+def test_a_cell_of_harness_errors_is_incomplete(tmp_path):
+    rows = cell(size="64k") + [dict(r, outcome="HARNESS_ERROR", t_check_us="", bytes_hashed="") for r in cell(size="1m")]
+    assert hash_rate.check([write(tmp_path / "a.csv", rows)]) == 2
 
 
 def test_stress_cells_are_not_judged(tmp_path):
