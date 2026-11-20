@@ -1,6 +1,7 @@
 #!/bin/bash
 # RaceProof environment check. Run inside WSL/Linux: bash tools/check_env.sh
-# Prints SUPPORTED or UNSUPPORTED with reasons and writes results/env.txt, or the file named
+# Prints SUPPORTED or UNSUPPORTED with reasons and writes results/env.txt (a local file, not
+# tracked by git, so running the check never leaves the tree modified), or the file named
 # as the first argument (tools/full_run.sh keeps one environment record per run that way).
 # SUPPORTED is about the kernel, filesystem and compiler: the sealed policy can run here.
 # The "experiments" and "plots" lines say whether the rest of the toolchain is present.
@@ -38,6 +39,8 @@ fi
 for t in gcc make python3 readelf stress-ng; do
   if command -v "$t" >/dev/null 2>&1; then log "tool $t: $(command -v "$t")"; else log "tool $t: MISSING"; [ "$t" = stress-ng ] || ok=0; fi
 done
+log "gcc: $(gcc --version 2>/dev/null | head -1)"
+log "libc: $(ldd --version 2>/dev/null | head -1)"
 python3 -c "import matplotlib, numpy" 2>/dev/null && log "python: matplotlib+numpy ok" || log "python: matplotlib/numpy MISSING (needed for plots only)"
 
 fstype=$(stat -f -c %T "$PWD" 2>/dev/null || echo unknown)

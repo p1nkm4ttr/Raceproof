@@ -17,4 +17,5 @@ Thumbs.db
 .DS_Store
 docs/
 results/quick.csv
+results/env.txt
 broker/.hash_*

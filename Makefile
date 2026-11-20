@@ -1,6 +1,6 @@
 # RaceProof top-level Makefile. Run inside WSL (Ubuntu).
 #   make            build fixtures, broker, updater (whatever sources exist yet)
-#   make check-env  verify kernel support for executable sealed memfds; writes results/env.txt
+#   make check-env  verify kernel support for executable sealed memfds; writes results/env.txt (local, untracked)
 #   make fixtures   build prog_a / prog_b at four sizes, allowlist.txt, layout.txt
 #   make experiment run every matrix in harness/config.json into results/
 #   make plots      regenerate figures from results/*.csv (report versions in report/figures/paper/)

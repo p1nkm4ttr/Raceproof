@@ -7,7 +7,7 @@ the broker and updater, classifies every trial, and appends rows to a CSV.
     python3 harness/run_trials.py --matrix controlled --run-id run2 --out results/run2_controlled.csv
     python3 harness/run_trials.py --all --run-id run3      # results/run3_<matrix>.csv
     python3 harness/run_trials.py --matrix controlled --quick    # 64k, idle, 2 reps
-    bash tools/full_run.sh run4                            # every matrix, both hashes, clean tree only
+    bash tools/full_run.sh run5                            # every matrix, both hashes, clean tree only
 
 Guarantees this runner makes about its output:
   * every row carries run_id and git_rev, so runs are distinguishable;
