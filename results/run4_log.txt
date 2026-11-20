@@ -1,0 +1,66 @@
+run run4 from commit ca725dd, started 2026-11-20T12:49:42+05:00
+== environment check ==
+kernel: 6.6.114.1-microsoft-standard-WSL2
+cpu: 13th Gen Intel(R) Core(TM) i5-13420H
+openssl: OpenSSL 3.5.5 27 Jan 2026 (Library: OpenSSL 3.5.5 27 Jan 2026)
+libssl-dev: present (make broker HASH=openssl available)
+experiments: ready
+plots: ready
+RESULT: SUPPORTED
+== build (default hash) ==
+== matrices: controlled, free timing, overhead ==
+run_id=run4 git_rev=ca725dd sizes=['64k', '1m', '8m', '32m'] loads=['idle', 'stress']
+wrote /mnt/c/Users/HP VICTUS/Documents/OS Project Final/Raceproof/results/run4_controlled.csv
+wrote /mnt/c/Users/HP VICTUS/Documents/OS Project Final/Raceproof/results/run4_uncontrolled.csv
+wrote /mnt/c/Users/HP VICTUS/Documents/OS Project Final/Raceproof/results/run4_overhead.csv
+== overhead matrix with the OpenSSL hash ==
+run_id=run4_openssl git_rev=ca725dd sizes=['64k', '1m', '8m', '32m'] loads=['idle', 'stress']
+wrote /mnt/c/Users/HP VICTUS/Documents/OS Project Final/Raceproof/results/run4_openssl_overhead.csv
+== finished 2026-11-20T13:37:59+05:00, 48 minutes ==
+
+run4_controlled.csv
+  matrix       hash         load   size     path       fd   sealed   max/min
+  controlled   vendored-c   idle   64k       280      286      317     1.13
+  controlled   vendored-c   idle   1m        335      334      340     1.02
+  controlled   vendored-c   idle   8m        336      337      339     1.01
+  controlled   vendored-c   idle   32m       338      336      338     1.00
+  controlled   vendored-c   stress 64k       166      170      187     1.12
+  controlled   vendored-c   stress 1m        108      105      107     1.02
+  controlled   vendored-c   stress 8m         88       86       84     1.05
+  controlled   vendored-c   stress 32m       102      101      105     1.04
+run4_openssl_overhead.csv
+  matrix       hash         load   size     path       fd   sealed   max/min
+  overhead     openssl-evp  idle   64k       822      841      960     1.17
+  overhead     openssl-evp  idle   1m       1688     1697     1699     1.01
+  overhead     openssl-evp  idle   8m       1724     1737     1660     1.05
+  overhead     openssl-evp  idle   32m      1735     1759     1702     1.03
+  overhead     openssl-evp  stress 64k       603      564      723     1.28
+  overhead     openssl-evp  stress 1m       1459     1501     1446     1.04
+  overhead     openssl-evp  stress 8m        883      891      605     1.47
+  overhead     openssl-evp  stress 32m       796      792      714     1.11
+run4_overhead.csv
+  matrix       hash         load   size     path       fd   sealed   max/min
+  overhead     vendored-c   idle   64k       318      321      303     1.06
+  overhead     vendored-c   idle   1m        339      338      344     1.02
+  overhead     vendored-c   idle   8m        333      334      338     1.01
+  overhead     vendored-c   idle   32m       336      337      337     1.00
+  overhead     vendored-c   stress 64k       165      171      193     1.17
+  overhead     vendored-c   stress 1m        110      110      110     1.00
+  overhead     vendored-c   stress 8m        109       90      105     1.21
+  overhead     vendored-c   stress 32m       134      127      134     1.05
+run4_uncontrolled.csv
+  matrix       hash         load   size     path       fd   sealed   max/min
+  uncontrolled vendored-c   idle   64k       274      277      310     1.13
+  uncontrolled vendored-c   idle   1m        299      306      308     1.03
+  uncontrolled vendored-c   idle   8m        328      331      331     1.01
+  uncontrolled vendored-c   idle   32m       328      328      327     1.00
+  uncontrolled vendored-c   stress 64k       167      168      185     1.11
+  uncontrolled vendored-c   stress 1m        105      106      107     1.02
+  uncontrolled vendored-c   stress 8m         88       87       85     1.03
+  uncontrolled vendored-c   stress 32m       125      125      128     1.03
+
+hash rates agree across policies in every idle cell
+
+Next: read the hash-rate check above, then
+  python3 analysis/summarize.py results/run4_uncontrolled.csv --by policy,change,region
+  python3 analysis/plots.py --run run4 --overhead-fast results/run4_openssl_overhead.csv --paper --out report/figures_run4
