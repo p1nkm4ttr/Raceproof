@@ -65,6 +65,8 @@ WRITTEN = []   # files produced by this invocation
 
 
 def save(fig, path, **kw):
+    if path.suffix == ".pdf":
+        kw.setdefault("metadata", {"CreationDate": None})   # no timestamp: the same data gives the same bytes
     fig.savefig(path, **kw)
     WRITTEN.append(path)
 
