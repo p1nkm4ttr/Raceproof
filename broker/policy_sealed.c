@@ -61,11 +61,25 @@ static long copy_with_tear(int src, int mfd, long tear_at) {
     return copied;
 }
 
+/* Read exactly n bytes at off unless the file ends first. Returns the bytes read, or -1. */
+static ssize_t pread_full(int fd, unsigned char *buf, size_t n, off_t off) {
+    size_t got = 0;
+    while (got < n) {
+        ssize_t r = pread(fd, buf + got, n - got, off + (off_t)got);
+        if (r < 0) { if (errno == EINTR) continue; return -1; }
+        if (r == 0) break;                         /* end of file */
+        got += (size_t)r;
+    }
+    return (ssize_t)got;
+}
+
 /* Compare the sealed copy with the pre-attack (A) and post-attack (B) references.
- * Sets torn_checked=1 only when the copy and both references were read in full;
- * a failed or short read abandons the analysis and leaves torn_checked=0, which
- * the harness treats as a failure. A copy whose length differs from a reference
- * cannot equal it. */
+ * Sets torn_checked=1 only when every byte of the copy was read and compared with
+ * both references. Reads are completed in a loop, so a short read cannot skip
+ * bytes; a read error, or a copy that ends before its recorded length, abandons
+ * the analysis and leaves torn_checked=0, which the harness treats as a failure.
+ * A reference that ends early is shorter than the copy, which is a real
+ * difference and is counted as one. */
 static void torn_analysis(int mfd, long len, struct status *st) {
     const char *ra = getenv("RP_REF_A"), *rb = getenv("RP_REF_B");
     st->torn_checked = 0;
@@ -82,8 +96,9 @@ static void torn_analysis(int mfd, long len, struct status *st) {
     unsigned char m[CHUNK], a[CHUNK], b[CHUNK];
     int all_a = (sa.st_size == len), all_b = (sb2.st_size == len), complete = 1; long first = -1, last = -1;
     for (off_t off = 0; off < len; off += CHUNK) {
-        ssize_t nm = pread(mfd, m, CHUNK, off), na = pread(fa, a, CHUNK, off), nb = pread(fb, b, CHUNK, off);
-        if (nm <= 0 || na < 0 || nb < 0) { complete = 0; break; }
+        size_t want = (len - off) < CHUNK ? (size_t)(len - off) : (size_t)CHUNK;
+        ssize_t nm = pread_full(mfd, m, want, off), na = pread_full(fa, a, want, off), nb = pread_full(fb, b, want, off);
+        if (nm != (ssize_t)want || na < 0 || nb < 0) { complete = 0; break; }
         if (na != nm || memcmp(m, a, nm) != 0) {
             all_a = 0;
             for (ssize_t i = 0; i < nm; i++) if (i >= na || m[i] != a[i]) { if (first < 0) first = off + i; last = off + i; }
@@ -91,7 +106,7 @@ static void torn_analysis(int mfd, long len, struct status *st) {
         if (nb != nm || memcmp(m, b, nm) != 0) all_b = 0;
     }
     close(fa); close(fb);
-    if (!complete) { fprintf(stderr, "broker: torn analysis abandoned, a read failed\n"); return; }
+    if (!complete) { fprintf(stderr, "broker: torn analysis abandoned, a read failed or came up short\n"); return; }
     st->torn_checked = 1;
     st->torn = (!all_a && !all_b);
     st->torn_first = all_a ? -1 : first;
