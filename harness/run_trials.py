@@ -7,6 +7,7 @@ the broker and updater, classifies every trial, and appends rows to a CSV.
     python3 harness/run_trials.py --matrix controlled --run-id run2 --out results/run2_controlled.csv
     python3 harness/run_trials.py --all --run-id run3      # results/run3_<matrix>.csv
     python3 harness/run_trials.py --matrix controlled --quick    # 64k, idle, 2 reps
+    bash tools/full_run.sh run4                            # every matrix, both hashes, clean tree only
 
 Guarantees this runner makes about its output:
   * every row carries run_id and git_rev, so runs are distinguishable;
@@ -17,8 +18,18 @@ Guarantees this runner makes about its output:
   * it fails loudly if the broker returns a different number of records than
     requested, prints unparsable output, or if the updater or stress-ng died;
   * no RP_* variable from the calling shell reaches the broker or updater;
-  * policies are interleaved within each cell, not run in blocks, so order
-    effects do not line up with policy.
+  * in the free-timing and overhead matrices policies are interleaved within
+    each cell, not run in blocks, so order effects do not line up with policy
+    (controlled configurations run one after another; their outcomes are fixed
+    by the barrier, not by timing);
+  * a controlled trial counts only if the updater logged its write with no
+    unexpected error, and a free-timing cell only if the updater's summary
+    shows at least one write and no unexpected error; ETXTBSY is a result and
+    is recorded, any other write error is a harness failure;
+  * every sealed row of a security matrix must carry the broker's torn-copy
+    check, or the run stops;
+  * it refuses to add a matrix to a CSV that already holds that run_id and
+    matrix, so a rerun cannot count trials twice.
 
 Every trial runs in a scratch directory on a native Linux filesystem
 ($RP_SCRATCH, default ~/raceproof-scratch); the runner refuses anything else
@@ -172,9 +183,9 @@ def parse_updater(text: str) -> dict:
             errors += 1
         last = r
     if summary:
-        return {"writes": summary["writes"], "etxtbsy": summary["etxtbsy"], "errors": summary.get("errors", 0),
-                "last_errno": "", "last_t_us": summary.get("run_us", "")}
-    return {"writes": writes, "etxtbsy": etxtbsy, "errors": errors,
+        return {"summary": True, "writes": summary["writes"], "etxtbsy": summary["etxtbsy"],
+                "errors": summary.get("errors", 0), "last_errno": "", "last_t_us": summary.get("run_us", "")}
+    return {"summary": False, "writes": writes, "etxtbsy": etxtbsy, "errors": errors,
             "last_errno": last.get("errno", ""), "last_t_us": last.get("t_us", "")}
 
 
@@ -244,14 +255,20 @@ class Trial:
 
 
 class Writer:
-    def __init__(self, path: Path, run_id: str, rev: str):
+    def __init__(self, path: Path, run_id: str, rev: str, matrix: str = ""):
         self.path, self.run_id, self.rev = path, run_id, rev
         path.parent.mkdir(exist_ok=True)
         if path.exists() and path.stat().st_size > 0:
-            header = path.open(newline="").readline().strip().split(",")
-            if header != COLUMNS:
-                sys.exit(f"{path} has a different header ({len(header)} columns vs {len(COLUMNS)} expected). "
-                         f"Rename or move it; this runner never appends to a mismatched file.")
+            with path.open(newline="") as existing:
+                rows = csv.reader(existing)
+                header = next(rows, [])
+                if header != COLUMNS:
+                    sys.exit(f"{path} has a different header ({len(header)} columns vs {len(COLUMNS)} expected). "
+                             f"Rename or move it; this runner never appends to a mismatched file.")
+                i_run, i_mat = COLUMNS.index("run_id"), COLUMNS.index("matrix")
+                if matrix and any(len(r) > i_mat and r[i_run] == run_id and r[i_mat] == matrix for r in rows):
+                    sys.exit(f"{path} already holds run {run_id!r}, matrix {matrix}; appending would count its "
+                             f"trials twice. Use another --run-id or --out.")
             self.f = path.open("a", newline="")
             self.w = csv.DictWriter(self.f, fieldnames=COLUMNS)
         else:
@@ -357,6 +374,12 @@ def run_controlled(cfg, scratch, layout, writer, sizes, loads, regions, reps, st
                     stress.check()
                 rec, upd, note = controlled_trial(t, c, tear)
                 usable = rec is not None and rec.get("decision") in ("APPROVE", "REJECT", "ERROR") and not note
+                if usable and (upd["writes"] < 1 or upd["errors"] > 0):
+                    # No logged write, or a write that failed with something other than ETXTBSY: the
+                    # attack was not delivered, so the broker's clean launch says nothing about the policy.
+                    usable = False
+                    note = (f"attack not delivered: updater logged {upd['writes']} write(s), "
+                            f"{upd['errors']} unexpected error(s)")
                 if usable and c["policy"] == "sealed" and not rec.get("torn_checked", 0) and rec.get("decision") != "ERROR":
                     raise HarnessError(f"sealed broker did not run the torn analysis for {c}; references missing?")
                 if usable:
@@ -414,12 +437,19 @@ def run_uncontrolled(cfg, scratch, layout, writer, sizes, loads, reps, stress, r
         info = parse_updater(uout)
         if not uout.strip() or upd.returncode not in (0, -15):
             raise HarnessError(f"updater ended badly (exit {upd.returncode}): {uerr.strip()[:200]}")
+        if not info["summary"] or info["writes"] < 1 or info["errors"] > 0:
+            raise HarnessError(f"cell {change} {region or '-'} gap={gap} {size} {load} was not under attack as "
+                               f"intended: updater summary present={info['summary']}, writes={info['writes']}, "
+                               f"unexpected errors={info['errors']}")
         total = sum(len(v) for v in per_policy.values())
         batch = {"batch_launches": total, "batch_updater_writes": info["writes"], "batch_updater_etxtbsy": info["etxtbsy"]}
         for policy, recs in per_policy.items():
             base = dict(matrix="uncontrolled", policy=policy, change=change, stage="free", region=region, tear="",
                         gap=gap, gap_us=gaps[gap], size=size, load=load, attempt=1)
             for rep, rec in enumerate(recs):
+                if policy == "sealed" and rec.get("decision") != "ERROR" and not rec.get("torn_checked", 0):
+                    raise HarnessError(f"sealed broker did not complete the torn analysis in cell {change} "
+                                       f"{region or '-'} gap={gap} {size} {load}; references missing or unreadable")
                 out = classify(rec, approved_pad=t.lay["pad"])
                 writer.row(dict(base, rep=rep), rec, out, None, batch)
         print(f"uncontrolled {change:7} {region or '-':5} gap={gap:5} {size:3} {load:6} n={total} "
@@ -459,6 +489,8 @@ def main():
     ap.add_argument("--regions", help="uncontrolled only: comma list of variants, e.g. tail or replace,text")
     ap.add_argument("--quick", action="store_true", help="64k, idle, 2 reps")
     ap.add_argument("--run-id", help="label for this run (default: timestamp)")
+    ap.add_argument("--require-clean", action="store_true",
+                    help="refuse to run when tracked files have uncommitted changes, so git_rev names the exact source")
     args = ap.parse_args()
     if not args.matrix and not args.all:
         ap.error("--matrix or --all")
@@ -468,10 +500,14 @@ def main():
     layout = read_layout()
     run_id = args.run_id or time.strftime("%Y%m%dT%H%M%S")
     rev = git_rev()
+    if args.require_clean and (rev.endswith("-dirty") or rev == "unknown"):
+        sys.exit(f"--require-clean: the tree is {rev}; commit the changes to tracked files first")
     matrices = ["controlled", "uncontrolled", "overhead"] if args.all else [args.matrix]
     sizes = args.sizes.split(",") if args.sizes else (["64k"] if args.quick else CONFIG["sizes"])
     loads = args.loads.split(",") if args.loads else (["idle"] if args.quick else CONFIG["loads"])
     regions = CONFIG["regions"]
+    if "stress" in loads and shutil.which("stress-ng") is None:
+        sys.exit("stress-ng not installed; install it or pass --loads idle")
     print(f"run_id={run_id} git_rev={rev} sizes={sizes} loads={loads}")
 
     for name in matrices:
@@ -479,7 +515,7 @@ def main():
         # Default file name carries the run id so a new run never collides with a committed one
         # (the writer refuses to append to a file whose header differs from its own).
         out = Path(args.out) if (args.out and len(matrices) == 1) else ROOT / "results" / f"{run_id}_{name}.csv"
-        writer = Writer(out, run_id, rev)
+        writer = Writer(out, run_id, rev, name)
         stress = Stress()
         try:
             for load in loads:

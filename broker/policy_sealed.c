@@ -62,8 +62,10 @@ static long copy_with_tear(int src, int mfd, long tear_at) {
 }
 
 /* Compare the sealed copy with the pre-attack (A) and post-attack (B) references.
- * Sets torn_checked=1 only when both references were read; a copy whose length
- * differs from a reference cannot equal it. */
+ * Sets torn_checked=1 only when the copy and both references were read in full;
+ * a failed or short read abandons the analysis and leaves torn_checked=0, which
+ * the harness treats as a failure. A copy whose length differs from a reference
+ * cannot equal it. */
 static void torn_analysis(int mfd, long len, struct status *st) {
     const char *ra = getenv("RP_REF_A"), *rb = getenv("RP_REF_B");
     st->torn_checked = 0;
@@ -78,10 +80,10 @@ static void torn_analysis(int mfd, long len, struct status *st) {
     struct stat sa, sb2;
     if (fstat(fa, &sa) < 0 || fstat(fb, &sb2) < 0) { close(fa); close(fb); return; }
     unsigned char m[CHUNK], a[CHUNK], b[CHUNK];
-    int all_a = (sa.st_size == len), all_b = (sb2.st_size == len); long first = -1, last = -1;
+    int all_a = (sa.st_size == len), all_b = (sb2.st_size == len), complete = 1; long first = -1, last = -1;
     for (off_t off = 0; off < len; off += CHUNK) {
         ssize_t nm = pread(mfd, m, CHUNK, off), na = pread(fa, a, CHUNK, off), nb = pread(fb, b, CHUNK, off);
-        if (nm <= 0) break;
+        if (nm <= 0 || na < 0 || nb < 0) { complete = 0; break; }
         if (na != nm || memcmp(m, a, nm) != 0) {
             all_a = 0;
             for (ssize_t i = 0; i < nm; i++) if (i >= na || m[i] != a[i]) { if (first < 0) first = off + i; last = off + i; }
@@ -89,6 +91,7 @@ static void torn_analysis(int mfd, long len, struct status *st) {
         if (nb != nm || memcmp(m, b, nm) != 0) all_b = 0;
     }
     close(fa); close(fb);
+    if (!complete) { fprintf(stderr, "broker: torn analysis abandoned, a read failed\n"); return; }
     st->torn_checked = 1;
     st->torn = (!all_a && !all_b);
     st->torn_first = all_a ? -1 : first;
