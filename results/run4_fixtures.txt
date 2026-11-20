@@ -1,0 +1,17 @@
+# Fixtures measured in run 4: fixtures/layout.txt and fixtures/allowlist.txt exactly as committed at ca725dd.
+# Run 4 rebuilt the fixtures and would have stopped had either file differed from the commit.
+# Compiler on that system: gcc (Ubuntu 15.2.0-16ubuntu1) 15.2.0, recorded by an environment check later the same day, not by run 4 itself.
+# fixtures/layout.txt
+bin/prog_a_64k size=74424 text_off=4096 text_size=514 pad=84363e71c94a0383
+bin/prog_b_64k size=74424 text_off=4096 text_size=514 pad=1377cc3beafd0383
+bin/prog_a_1m size=1057464 text_off=4096 text_size=514 pad=19fa3825ce6d0383
+bin/prog_b_1m size=1057464 text_off=4096 text_size=514 pad=4875ac67e99d0383
+bin/prog_a_8m size=8397496 text_off=4096 text_size=514 pad=63b6035b4a1d0383
+bin/prog_b_8m size=8397496 text_off=4096 text_size=514 pad=3fa3f56c239d0383
+bin/prog_a_32m size=33563320 text_off=4096 text_size=514 pad=bf36de5bcd9d0383
+bin/prog_b_32m size=33563320 text_off=4096 text_size=514 pad=9da0a69f339d0383
+# fixtures/allowlist.txt
+40ba59d9dc440c645b9cf814025a8c457a33f9ec1fe571be2dff30d18e057aeb  bin/prog_a_64k
+d7b4ae48e836b72f007732fb1a4c7d13532adb6dfdb3f8871755806c725f1ade  bin/prog_a_1m
+5aa788e2904703aad2d5fa8617f7b3c07b6688c87fee351f24f23961312d578e  bin/prog_a_8m
+81efcd9afc5e73c02807e526eeb537a6fbbd69aed8605b6fecf55e5f7b930dcd  bin/prog_a_32m

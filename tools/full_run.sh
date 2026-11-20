@@ -19,7 +19,8 @@
 # should be running: other programs on the host change launch times, see the README.
 #
 # Writes results/<run>_controlled.csv, results/<run>_uncontrolled.csv,
-# results/<run>_overhead.csv, results/<run>_openssl_overhead.csv, results/<run>_env.txt and
+# results/<run>_overhead.csv, results/<run>_openssl_overhead.csv, results/<run>_fixtures.txt
+# (the layout and hashes of the fixtures it built, which depend on the compiler), results/<run>_env.txt and
 # results/<run>_log.txt, and finishes with the hash-rate check that shows whether the
 # overhead timings can be trusted. It never overwrites or appends to an existing file.
 
@@ -68,7 +69,8 @@ if [ -n "$stray" ]; then
 fi
 clean_or_stop "before the build"
 outputs=("results/${RUN}_controlled.csv" "results/${RUN}_uncontrolled.csv" "results/${RUN}_overhead.csv"
-         "results/${RUN}_openssl_overhead.csv" "results/${RUN}_env.txt" "results/${RUN}_log.txt")
+         "results/${RUN}_openssl_overhead.csv" "results/${RUN}_env.txt" "results/${RUN}_log.txt"
+         "results/${RUN}_fixtures.txt")
 for f in "${outputs[@]}"; do
   if [ -e "$f" ]; then echo "STOP: $f already exists; pick a run id that has not been used"; exit 1; fi
 done
@@ -90,7 +92,14 @@ main() {
   # turn the default-hash matrices into OpenSSL ones.
   make clean > /dev/null && make all HASH=vendored > /dev/null || { echo "STOP: build failed"; return 1; }
   sha256sum broker/broker updater/updater | sed 's/^/  /'
-  clean_or_stop "after the build: the rebuilt fixtures differ from the committed allowlist or layout"
+  {
+    echo "# Fixtures measured in run $RUN: built from commit $rev with $(gcc --version | head -1)."
+    echo "# fixtures/layout.txt"
+    cat fixtures/layout.txt
+    echo "# fixtures/allowlist.txt"
+    cat fixtures/allowlist.txt
+  } > "results/${RUN}_fixtures.txt"
+  clean_or_stop "after the build: building changed a tracked file"
 
   echo "== matrices: controlled, free timing, overhead =="
   python3 harness/run_trials.py --all --run-id "$RUN" --require-clean ${EXTRA[@]+"${EXTRA[@]}"} | grep -vE " done$" || return 1

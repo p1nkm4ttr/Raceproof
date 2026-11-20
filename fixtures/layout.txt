@@ -1,8 +1,0 @@
-bin/prog_a_64k size=74424 text_off=4096 text_size=514 pad=84363e71c94a0383
-bin/prog_b_64k size=74424 text_off=4096 text_size=514 pad=1377cc3beafd0383
-bin/prog_a_1m size=1057464 text_off=4096 text_size=514 pad=19fa3825ce6d0383
-bin/prog_b_1m size=1057464 text_off=4096 text_size=514 pad=4875ac67e99d0383
-bin/prog_a_8m size=8397496 text_off=4096 text_size=514 pad=63b6035b4a1d0383
-bin/prog_b_8m size=8397496 text_off=4096 text_size=514 pad=3fa3f56c239d0383
-bin/prog_a_32m size=33563320 text_off=4096 text_size=514 pad=bf36de5bcd9d0383
-bin/prog_b_32m size=33563320 text_off=4096 text_size=514 pad=9da0a69f339d0383

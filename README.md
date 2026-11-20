@@ -18,18 +18,20 @@ Every launch is classified from what actually ran, never from what the broker be
 
 ## Requirements
 
-Linux x86-64 with `memfd_create`, file seals and `execveat` (kernel 3.17 or later, `vm.memfd_noexec` not 2). Developed and measured on WSL2 Ubuntu 26.04, kernel 6.6.
+Linux x86-64 with `memfd_create`, file seals and `execveat` (kernel 3.17 or later, `vm.memfd_noexec` not 2). Developed and measured on WSL2 Ubuntu 26.04, kernel 6.6 (gcc 15.2, Python 3.14, matplotlib 3.10.7). Also followed from an empty install of Ubuntu 24.04 (gcc 13.3, Python 3.12, matplotlib 3.6.3, OpenSSL 3.0.13): the build, the environment check, the tests, a reduced experiment under both loads and the plots all work there.
 
 ```bash
-sudo apt install -y build-essential binutils python3 stress-ng python3-matplotlib python3-numpy python3-pytest
+sudo apt update      # a new install has empty package lists; without this the next line fails
+sudo apt install -y git build-essential binutils python3 stress-ng python3-matplotlib python3-numpy python3-pytest
 sudo apt install -y libssl-dev    # only for the optional OpenSSL (SHA-NI) broker build
 ```
 
 ## Quick start
 
 ```bash
+git clone https://github.com/p1nkm4ttr/Raceproof.git && cd Raceproof
 make check-env    # must print SUPPORTED, "experiments: ready" and "plots: ready"; writes results/env.txt (local, not tracked)
-make fixtures     # builds fixtures/bin/prog_{a,b}_{64k,1m,8m,32m}, allowlist.txt, layout.txt
+make fixtures     # builds fixtures/bin/prog_{a,b}_{64k,1m,8m,32m}, allowlist.txt, layout.txt (one to four minutes)
 make              # builds broker/broker and updater/updater (plain-C SHA-256)
 make broker HASH=openssl   # same broker hashing with OpenSSL EVP, SHA-NI on this CPU; rows carry hash_impl
 make quick        # 10-second smoke test: controlled matrix at 64 KiB, 2 reps, then a summary
@@ -43,7 +45,7 @@ The repository may live on the Windows filesystem (`/mnt/c/...`); building there
 
 ### Fixtures
 
-`fixtures/prog.c` is a freestanding x86-64 program (no libc) built as `prog_a` and `prog_b` at four sizes. It prints two lines: `RACEPROOF_ID=<A|B> PID=<pid>` and `RACEPROOF_PAD=<64-bit checksum of its padding>`. The checksum is the FNV-1a loop (xor a byte, multiply by 1099511628211) started from 1469598103934665603, which is not the standard FNV offset basis (14695981039346656037). Expected values are derived from the fixtures themselves at build time, so every comparison is self-consistent, but an independent FNV-1a implementation will not reproduce the printed values. The padding is filled with the program's own ID byte, so A and B differ at every padding byte. The two lines attest the two regions the attacks target, the ID-printing code and the padding; they do not attest the ELF header or any other byte. Only the four `prog_a` hashes are on the allowlist.
+`fixtures/prog.c` is a freestanding x86-64 program (no libc) built as `prog_a` and `prog_b` at four sizes. It prints two lines: `RACEPROOF_ID=<A|B> PID=<pid>` and `RACEPROOF_PAD=<64-bit checksum of its padding>`. The checksum is the FNV-1a loop (xor a byte, multiply by 1099511628211) started from 1469598103934665603, which is not the standard FNV offset basis (14695981039346656037). Expected values are derived from the fixtures themselves at build time, so every comparison is self-consistent, but an independent FNV-1a implementation will not reproduce the printed values. The padding is filled with the program's own ID byte, so A and B differ at every padding byte. The two lines attest the two regions the attacks target, the ID-printing code and the padding; they do not attest the ELF header or any other byte. Only the four `prog_a` hashes are on the allowlist. `fixtures/allowlist.txt` and `fixtures/layout.txt` are build outputs and are not tracked: another compiler produces different bytes and therefore different hashes (gcc 13.3 and gcc 15.2 do). The fixtures a published run measured are recorded in `results/<run>_fixtures.txt`.
 
 ### Broker
 
@@ -104,7 +106,7 @@ Flags: `torn` (sealed copy matched neither reference), `etxtbsy` (this launch's 
 | --- | --- |
 | `tools/full_run.sh` | one complete run of every matrix with both hashes; refuses to start with uncommitted changes to tracked files, with untracked files in the source directories, onto existing result files, or with options that would change its run id, matrices or output files; rebuilds every binary from scratch and logs its SHA-256; keeps a per-run environment record and log |
 | `tools/check_env.sh` | kernel version, memfd policy, filesystem types, and a live probe that creates, seals and executes a memfd with the same flags the broker uses |
-| `fixtures/` | `prog.c`, `build.sh`, outputs in `fixtures/bin/`, `allowlist.txt`, `layout.txt` |
+| `fixtures/` | `prog.c`, `build.sh`; build outputs, not tracked: `fixtures/bin/`, `allowlist.txt`, `layout.txt` |
 | `broker/` | `broker.c` (request loop, fork, JSON record, deadline), `policy_path.c`, `policy_fd.c`, `policy_sealed.c`, `barrier.c`, `sha256.c` (vendored, verified against the FIPS vectors) |
 | `updater/` | `updater.c` |
 | `harness/` | `run_trials.py`, `classify.py` and its tests, `config.json` |
@@ -114,11 +116,11 @@ Flags: `torn` (sealed copy matched neither reference), `etxtbsy` (this launch's 
 
 ## Result files
 
-Three runs of the two security matrices are committed (run 1's controlled matrix is one trial short). The overhead matrix was measured with the plain-C hash in each run and with the OpenSSL hash twice, on November 9 and November 20. `make plots` draws run 4, and every figure and table names the files it was drawn from. A new run writes `results/<run_id>_<matrix>.csv` and never touches these files. `make check-env`, `make quick` and `make plots` do not modify any tracked file (`results/env.txt` and `results/quick.csv` are local, and regenerating the figures from unchanged data reproduces them byte for byte), so `tools/full_run.sh` can be started after them from the same checkout. Runs 1 and 2 predate the per-run environment record and have none.
+Three runs of the two security matrices are committed (run 1's controlled matrix is one trial short). The overhead matrix was measured with the plain-C hash in each run and with the OpenSSL hash twice, on November 9 and November 20. `make plots` draws run 4, and every figure and table names the files it was drawn from. A new run writes `results/<run_id>_<matrix>.csv` and never touches these files. `make check-env`, `make fixtures`, `make` and `make quick` do not modify any tracked file (their outputs are local), so `tools/full_run.sh` can be started after them from the same checkout. `make plots` reproduces the committed figures byte for byte only with the matplotlib version they were drawn with (3.10.7). With another version the tables come out identical and the images look the same but differ in bytes (checked with 3.6.3), which leaves tracked files modified; `git checkout -- report/figures` puts the committed ones back. Runs 1 and 2 predate the per-run environment record and have none.
 
 | Run | Files | Made | Source | Notes |
 | --- | --- | --- | --- | --- |
-| 4 (published) | `run4_controlled.csv`, `run4_uncontrolled.csv`, `run4_overhead.csv`, `run4_openssl_overhead.csv`, `run4_env.txt`, `run4_log.txt` | November 20, by `tools/full_run.sh run4` | commit `ca725dd`, no uncommitted changes | 2,720 + 21,600 + 1,200 + 1,200 launches, no harness errors, no retries, policies' median hash rates within a factor of 1.17 in every idle cell (the check allows 1.5). The run script of that commit checked tracked files only and reused existing binaries; nothing untracked was present and no source had changed since they were built, and the script has since been tightened to enforce both |
+| 4 (published) | `run4_controlled.csv`, `run4_uncontrolled.csv`, `run4_overhead.csv`, `run4_openssl_overhead.csv`, `run4_env.txt`, `run4_log.txt`, `run4_fixtures.txt` | November 20, by `tools/full_run.sh run4` | commit `ca725dd`, no uncommitted changes | 2,720 + 21,600 + 1,200 + 1,200 launches, no harness errors, no retries, policies' median hash rates within a factor of 1.17 in every idle cell (the check allows 1.5). The run script of that commit checked tracked files only and reused existing binaries; nothing untracked was present and no source had changed since they were built, and the script has since been tightened to enforce both |
 | 2 | `run2_controlled.csv`, `run2_uncontrolled.csv`, `run2b_overhead.csv`, `run3b_openssl_overhead.csv` | November 7; the OpenSSL overhead on November 9 | `a3537df-dirty`: an uncommitted tree, so the revision string does not pin the source; `82da746` is the first commit containing all of it | first run on the current harness |
 | 1 | `controlled.csv`, `uncontrolled.csv`, `overhead.csv` | November 7 | first harness, 36-column header, no `run_id` or `git_rev` | policies run in a fixed order; controlled has 2,719 rows, one trial having exceeded that harness's 5 s limit |
 | kept, not plotted | `run2_overhead.csv`, `run3_openssl_overhead.csv`, `prelim_controlled_64k_nov7.csv` | | | the first was disturbed by other programs on the host (`analysis/hash_rate.py` marks it); the second paid OpenSSL's start-up in every forked child before the broker initialised it once in the parent; the third is the 64 KiB preliminary pass |

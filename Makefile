@@ -67,6 +67,6 @@ plots:
 	python3 analysis/plots.py --run run4 --overhead-fast results/run4_openssl_overhead.csv --paper
 
 clean:
-	rm -rf fixtures/bin broker/broker broker/.hash_* updater/updater
+	rm -rf fixtures/bin fixtures/allowlist.txt fixtures/layout.txt broker/broker broker/.hash_* updater/updater
 	find . -name '*.o' -delete
 	find . -name '__pycache__' -type d -exec rm -rf {} +

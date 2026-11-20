@@ -1,4 +1,6 @@
 fixtures/bin/
+fixtures/allowlist.txt
+fixtures/layout.txt
 broker/broker
 updater/updater
 *.o
