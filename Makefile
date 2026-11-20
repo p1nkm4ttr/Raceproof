@@ -58,10 +58,13 @@ quick: all
 	python3 harness/run_trials.py --matrix controlled --quick --out results/quick.csv
 	python3 analysis/summarize.py results/quick.csv
 
-# Draws the published datasets (run 2, run2b, run3b), not whatever ran last. For a new run:
-#   python3 analysis/plots.py --run <run_id> --out <dir>
+# Draws the published dataset (run 4, made by tools/full_run.sh from a committed tree), not whatever ran
+# last. For another run:  python3 analysis/plots.py --run <run_id> --out <dir>
+# Run 2 as it was published before run 4:
+#   python3 analysis/plots.py --run run2 --overhead results/run2b_overhead.csv \
+#       --overhead-fast results/run3b_openssl_overhead.csv --paper --out <dir>
 plots:
-	python3 analysis/plots.py --run run2 --overhead results/run2b_overhead.csv --overhead-fast results/run3b_openssl_overhead.csv --paper
+	python3 analysis/plots.py --run run4 --overhead-fast results/run4_openssl_overhead.csv --paper
 
 clean:
 	rm -rf fixtures/bin broker/broker broker/.hash_* updater/updater

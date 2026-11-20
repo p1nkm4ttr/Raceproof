@@ -1,52 +1,52 @@
-Launch cost by policy, size and load, no attacker. Data: `run2b_overhead.csv`, `run3b_openssl_overhead.csv`. p99 is nearest-rank, so with n = 50 it is the slowest launch. Copy share is the copy's part of a sealed launch, not the sealed policy's extra cost over another policy.
+Launch cost by policy, size and load, no attacker. Data: `run4_overhead.csv`, `run4_openssl_overhead.csv`. p99 is nearest-rank, so with n = 50 it is the slowest launch. Copy share is the copy's part of a sealed launch, not the sealed policy's extra cost over another policy.
 
 | Hash | Policy | Size | Load | n | hash median ms | copy median ms | total median ms | total p99 ms | copy share | bytes copied |
 | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| plain-C SHA-256 | pathname | 64k | idle | 50 | 0.31 | 0.00 | 0.65 | 1.08 | - | 0 |
-| plain-C SHA-256 | open descriptor | 64k | idle | 50 | 0.33 | 0.00 | 0.78 | 1.41 | - | 0 |
-| plain-C SHA-256 | sealed copy | 64k | idle | 50 | 0.30 | 0.08 | 0.88 | 1.65 | 10% | 74424 |
-| plain-C SHA-256 | pathname | 1m | idle | 50 | 4.62 | 0.00 | 5.16 | 9.73 | - | 0 |
-| plain-C SHA-256 | open descriptor | 1m | idle | 50 | 4.57 | 0.00 | 5.17 | 8.04 | - | 0 |
-| plain-C SHA-256 | sealed copy | 1m | idle | 50 | 4.71 | 0.50 | 6.04 | 8.73 | 8% | 1057464 |
-| plain-C SHA-256 | pathname | 8m | idle | 50 | 31.50 | 0.00 | 32.00 | 58.22 | - | 0 |
-| plain-C SHA-256 | open descriptor | 8m | idle | 50 | 30.24 | 0.00 | 30.71 | 47.19 | - | 0 |
-| plain-C SHA-256 | sealed copy | 8m | idle | 50 | 30.25 | 3.06 | 33.84 | 50.15 | 9% | 8397496 |
-| plain-C SHA-256 | pathname | 32m | idle | 50 | 106.56 | 0.00 | 107.18 | 135.17 | - | 0 |
-| plain-C SHA-256 | open descriptor | 32m | idle | 50 | 111.17 | 0.00 | 111.75 | 162.16 | - | 0 |
-| plain-C SHA-256 | sealed copy | 32m | idle | 50 | 118.77 | 11.66 | 131.69 | 160.71 | 9% | 33563320 |
-| plain-C SHA-256 | pathname | 64k | stress | 50 | 0.60 | 0.00 | 3.89 | 7.88 | - | 0 |
-| plain-C SHA-256 | open descriptor | 64k | stress | 50 | 0.59 | 0.00 | 3.99 | 7.16 | - | 0 |
-| plain-C SHA-256 | sealed copy | 64k | stress | 50 | 0.53 | 0.12 | 3.39 | 10.11 | 3% | 74424 |
-| plain-C SHA-256 | pathname | 1m | stress | 50 | 16.96 | 0.00 | 23.14 | 45.95 | - | 0 |
-| plain-C SHA-256 | open descriptor | 1m | stress | 50 | 16.91 | 0.00 | 21.55 | 48.20 | - | 0 |
-| plain-C SHA-256 | sealed copy | 1m | stress | 50 | 16.90 | 0.67 | 23.32 | 40.47 | 3% | 1057464 |
-| plain-C SHA-256 | pathname | 8m | stress | 50 | 137.98 | 0.00 | 141.40 | 211.77 | - | 0 |
-| plain-C SHA-256 | open descriptor | 8m | stress | 50 | 145.94 | 0.00 | 151.32 | 249.67 | - | 0 |
-| plain-C SHA-256 | sealed copy | 8m | stress | 50 | 147.69 | 10.07 | 156.97 | 281.29 | 6% | 8397496 |
-| plain-C SHA-256 | pathname | 32m | stress | 50 | 386.51 | 0.00 | 387.00 | 977.59 | - | 0 |
-| plain-C SHA-256 | open descriptor | 32m | stress | 50 | 414.13 | 0.00 | 417.36 | 788.40 | - | 0 |
-| plain-C SHA-256 | sealed copy | 32m | stress | 50 | 396.19 | 37.11 | 443.42 | 916.73 | 8% | 33563320 |
-| OpenSSL SHA-256 (SHA-NI) | pathname | 64k | idle | 50 | 0.10 | 0.00 | 0.35 | 1.09 | - | 0 |
-| OpenSSL SHA-256 (SHA-NI) | open descriptor | 64k | idle | 50 | 0.09 | 0.00 | 0.31 | 0.99 | - | 0 |
-| OpenSSL SHA-256 (SHA-NI) | sealed copy | 64k | idle | 50 | 0.09 | 0.06 | 0.49 | 1.12 | 11% | 74424 |
-| OpenSSL SHA-256 (SHA-NI) | pathname | 1m | idle | 50 | 0.65 | 0.00 | 1.00 | 1.40 | - | 0 |
-| OpenSSL SHA-256 (SHA-NI) | open descriptor | 1m | idle | 50 | 0.66 | 0.00 | 1.04 | 1.68 | - | 0 |
-| OpenSSL SHA-256 (SHA-NI) | sealed copy | 1m | idle | 50 | 0.64 | 0.37 | 1.49 | 2.01 | 25% | 1057464 |
-| OpenSSL SHA-256 (SHA-NI) | pathname | 8m | idle | 50 | 4.88 | 0.00 | 5.38 | 6.10 | - | 0 |
-| OpenSSL SHA-256 (SHA-NI) | open descriptor | 8m | idle | 50 | 4.87 | 0.00 | 5.41 | 9.22 | - | 0 |
-| OpenSSL SHA-256 (SHA-NI) | sealed copy | 8m | idle | 50 | 5.39 | 2.93 | 9.02 | 10.69 | 32% | 8397496 |
-| OpenSSL SHA-256 (SHA-NI) | pathname | 32m | idle | 50 | 19.47 | 0.00 | 20.04 | 21.89 | - | 0 |
-| OpenSSL SHA-256 (SHA-NI) | open descriptor | 32m | idle | 50 | 19.23 | 0.00 | 19.77 | 21.50 | - | 0 |
-| OpenSSL SHA-256 (SHA-NI) | sealed copy | 32m | idle | 50 | 20.26 | 10.43 | 31.60 | 39.63 | 33% | 33563320 |
-| OpenSSL SHA-256 (SHA-NI) | pathname | 64k | stress | 50 | 0.15 | 0.00 | 4.00 | 7.86 | - | 0 |
-| OpenSSL SHA-256 (SHA-NI) | open descriptor | 64k | stress | 50 | 0.17 | 0.00 | 4.05 | 8.36 | - | 0 |
-| OpenSSL SHA-256 (SHA-NI) | sealed copy | 64k | stress | 50 | 0.12 | 0.10 | 2.94 | 10.14 | 4% | 74424 |
-| OpenSSL SHA-256 (SHA-NI) | pathname | 1m | stress | 50 | 0.78 | 0.00 | 4.30 | 11.34 | - | 0 |
-| OpenSSL SHA-256 (SHA-NI) | open descriptor | 1m | stress | 50 | 0.78 | 0.00 | 5.67 | 11.55 | - | 0 |
-| OpenSSL SHA-256 (SHA-NI) | sealed copy | 1m | stress | 50 | 0.76 | 0.51 | 5.64 | 9.76 | 9% | 1057464 |
-| OpenSSL SHA-256 (SHA-NI) | pathname | 8m | stress | 50 | 10.22 | 0.00 | 14.42 | 23.27 | - | 0 |
-| OpenSSL SHA-256 (SHA-NI) | open descriptor | 8m | stress | 50 | 9.39 | 0.00 | 13.66 | 23.87 | - | 0 |
-| OpenSSL SHA-256 (SHA-NI) | sealed copy | 8m | stress | 50 | 13.82 | 4.09 | 23.22 | 38.01 | 18% | 8397496 |
-| OpenSSL SHA-256 (SHA-NI) | pathname | 32m | stress | 50 | 43.56 | 0.00 | 50.45 | 105.03 | - | 0 |
-| OpenSSL SHA-256 (SHA-NI) | open descriptor | 32m | stress | 50 | 44.59 | 0.00 | 52.19 | 89.02 | - | 0 |
-| OpenSSL SHA-256 (SHA-NI) | sealed copy | 32m | stress | 50 | 48.62 | 26.70 | 81.41 | 122.42 | 33% | 33563320 |
+| plain-C SHA-256 | pathname | 64k | idle | 50 | 0.23 | 0.00 | 0.46 | 0.76 | - | 0 |
+| plain-C SHA-256 | open descriptor | 64k | idle | 50 | 0.23 | 0.00 | 0.45 | 0.81 | - | 0 |
+| plain-C SHA-256 | sealed copy | 64k | idle | 50 | 0.25 | 0.05 | 0.58 | 1.04 | 8% | 74424 |
+| plain-C SHA-256 | pathname | 1m | idle | 50 | 3.12 | 0.00 | 3.39 | 3.82 | - | 0 |
+| plain-C SHA-256 | open descriptor | 1m | idle | 50 | 3.13 | 0.00 | 3.40 | 3.72 | - | 0 |
+| plain-C SHA-256 | sealed copy | 1m | idle | 50 | 3.08 | 0.32 | 3.75 | 6.36 | 9% | 1057464 |
+| plain-C SHA-256 | pathname | 8m | idle | 50 | 25.21 | 0.00 | 25.61 | 27.47 | - | 0 |
+| plain-C SHA-256 | open descriptor | 8m | idle | 50 | 25.15 | 0.00 | 25.63 | 27.39 | - | 0 |
+| plain-C SHA-256 | sealed copy | 8m | idle | 50 | 24.87 | 2.68 | 28.07 | 30.54 | 10% | 8397496 |
+| plain-C SHA-256 | pathname | 32m | idle | 50 | 99.84 | 0.00 | 100.30 | 107.84 | - | 0 |
+| plain-C SHA-256 | open descriptor | 32m | idle | 50 | 99.55 | 0.00 | 100.03 | 107.24 | - | 0 |
+| plain-C SHA-256 | sealed copy | 32m | idle | 50 | 99.63 | 10.06 | 109.93 | 117.73 | 9% | 33563320 |
+| plain-C SHA-256 | pathname | 64k | stress | 50 | 0.45 | 0.00 | 3.88 | 7.16 | - | 0 |
+| plain-C SHA-256 | open descriptor | 64k | stress | 50 | 0.43 | 0.00 | 3.86 | 7.30 | - | 0 |
+| plain-C SHA-256 | sealed copy | 64k | stress | 50 | 0.39 | 0.07 | 2.90 | 7.54 | 2% | 74424 |
+| plain-C SHA-256 | pathname | 1m | stress | 50 | 9.64 | 0.00 | 13.19 | 21.95 | - | 0 |
+| plain-C SHA-256 | open descriptor | 1m | stress | 50 | 9.60 | 0.00 | 13.08 | 21.91 | - | 0 |
+| plain-C SHA-256 | sealed copy | 1m | stress | 50 | 9.64 | 0.55 | 14.15 | 21.04 | 4% | 1057464 |
+| plain-C SHA-256 | pathname | 8m | stress | 50 | 77.35 | 0.00 | 78.90 | 113.73 | - | 0 |
+| plain-C SHA-256 | open descriptor | 8m | stress | 50 | 93.63 | 0.00 | 97.50 | 144.02 | - | 0 |
+| plain-C SHA-256 | sealed copy | 8m | stress | 50 | 80.09 | 3.56 | 83.92 | 140.75 | 4% | 8397496 |
+| plain-C SHA-256 | pathname | 32m | stress | 50 | 250.25 | 0.00 | 252.50 | 406.59 | - | 0 |
+| plain-C SHA-256 | open descriptor | 32m | stress | 50 | 263.36 | 0.00 | 264.76 | 413.47 | - | 0 |
+| plain-C SHA-256 | sealed copy | 32m | stress | 50 | 250.12 | 27.47 | 280.60 | 441.84 | 10% | 33563320 |
+| OpenSSL SHA-256 (SHA-NI) | pathname | 64k | idle | 50 | 0.09 | 0.00 | 0.31 | 0.86 | - | 0 |
+| OpenSSL SHA-256 (SHA-NI) | open descriptor | 64k | idle | 50 | 0.09 | 0.00 | 0.30 | 0.84 | - | 0 |
+| OpenSSL SHA-256 (SHA-NI) | sealed copy | 64k | idle | 50 | 0.08 | 0.05 | 0.44 | 0.85 | 11% | 74424 |
+| OpenSSL SHA-256 (SHA-NI) | pathname | 1m | idle | 50 | 0.63 | 0.00 | 0.91 | 1.49 | - | 0 |
+| OpenSSL SHA-256 (SHA-NI) | open descriptor | 1m | idle | 50 | 0.62 | 0.00 | 0.90 | 1.51 | - | 0 |
+| OpenSSL SHA-256 (SHA-NI) | sealed copy | 1m | idle | 50 | 0.62 | 0.29 | 1.27 | 1.59 | 23% | 1057464 |
+| OpenSSL SHA-256 (SHA-NI) | pathname | 8m | idle | 50 | 4.87 | 0.00 | 5.29 | 5.93 | - | 0 |
+| OpenSSL SHA-256 (SHA-NI) | open descriptor | 8m | idle | 50 | 4.83 | 0.00 | 5.27 | 5.86 | - | 0 |
+| OpenSSL SHA-256 (SHA-NI) | sealed copy | 8m | idle | 50 | 5.06 | 2.74 | 8.37 | 9.10 | 33% | 8397496 |
+| OpenSSL SHA-256 (SHA-NI) | pathname | 32m | idle | 50 | 19.35 | 0.00 | 19.74 | 21.03 | - | 0 |
+| OpenSSL SHA-256 (SHA-NI) | open descriptor | 32m | idle | 50 | 19.08 | 0.00 | 19.50 | 21.12 | - | 0 |
+| OpenSSL SHA-256 (SHA-NI) | sealed copy | 32m | idle | 50 | 19.73 | 9.89 | 30.17 | 32.65 | 33% | 33563320 |
+| OpenSSL SHA-256 (SHA-NI) | pathname | 64k | stress | 50 | 0.12 | 0.00 | 3.85 | 7.58 | - | 0 |
+| OpenSSL SHA-256 (SHA-NI) | open descriptor | 64k | stress | 50 | 0.13 | 0.00 | 3.93 | 7.59 | - | 0 |
+| OpenSSL SHA-256 (SHA-NI) | sealed copy | 64k | stress | 50 | 0.10 | 0.07 | 2.99 | 8.90 | 2% | 74424 |
+| OpenSSL SHA-256 (SHA-NI) | pathname | 1m | stress | 50 | 0.72 | 0.00 | 4.21 | 8.91 | - | 0 |
+| OpenSSL SHA-256 (SHA-NI) | open descriptor | 1m | stress | 50 | 0.70 | 0.00 | 3.91 | 12.94 | - | 0 |
+| OpenSSL SHA-256 (SHA-NI) | sealed copy | 1m | stress | 50 | 0.73 | 0.44 | 5.67 | 8.90 | 8% | 1057464 |
+| OpenSSL SHA-256 (SHA-NI) | pathname | 8m | stress | 50 | 9.52 | 0.00 | 13.56 | 26.62 | - | 0 |
+| OpenSSL SHA-256 (SHA-NI) | open descriptor | 8m | stress | 50 | 9.43 | 0.00 | 14.34 | 23.00 | - | 0 |
+| OpenSSL SHA-256 (SHA-NI) | sealed copy | 8m | stress | 50 | 13.89 | 3.92 | 24.32 | 62.50 | 16% | 8397496 |
+| OpenSSL SHA-256 (SHA-NI) | pathname | 32m | stress | 50 | 42.19 | 0.00 | 46.84 | 92.65 | - | 0 |
+| OpenSSL SHA-256 (SHA-NI) | open descriptor | 32m | stress | 50 | 42.39 | 0.00 | 47.34 | 66.59 | - | 0 |
+| OpenSSL SHA-256 (SHA-NI) | sealed copy | 32m | stress | 50 | 46.99 | 25.00 | 75.06 | 107.50 | 33% | 33563320 |
