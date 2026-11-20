@@ -1,12 +1,15 @@
 #!/bin/bash
 # RaceProof environment check. Run inside WSL/Linux: bash tools/check_env.sh
-# Prints SUPPORTED or UNSUPPORTED with reasons and writes results/env.txt.
+# Prints SUPPORTED or UNSUPPORTED with reasons and writes results/env.txt, or the file named
+# as the first argument (tools/full_run.sh keeps one environment record per run that way).
+# SUPPORTED is about the kernel, filesystem and compiler: the sealed policy can run here.
+# The "experiments" and "plots" lines say whether the rest of the toolchain is present.
 # Never changes any sysctl.
 
 set -u
 cd "$(dirname "$0")/.." || exit 1
 mkdir -p results
-OUT=results/env.txt
+OUT="${1:-results/env.txt}"
 ok=1
 : > "$OUT"
 
@@ -90,5 +93,10 @@ else
   log "FAIL: probe did not compile"; ok=0
 fi
 rm -f "$probe_src" "$probe_bin"
+
+if command -v stress-ng >/dev/null 2>&1; then log "experiments: ready"
+else log "experiments: NOT READY (stress-ng missing; the CPU-stress half of every matrix cannot run)"; fi
+if python3 -c "import matplotlib" 2>/dev/null; then log "plots: ready"
+else log "plots: NOT READY (python3-matplotlib missing)"; fi
 
 if [ $ok -eq 1 ]; then log "RESULT: SUPPORTED"; exit 0; else log "RESULT: UNSUPPORTED"; exit 1; fi
