@@ -28,27 +28,28 @@ sudo apt install -y libssl-dev    # only for the optional OpenSSL (SHA-NI) broke
 ## Quick start
 
 ```bash
-make check-env    # must print SUPPORTED; writes results/env.txt
+make check-env    # must print SUPPORTED, "experiments: ready" and "plots: ready"; writes results/env.txt
 make fixtures     # builds fixtures/bin/prog_{a,b}_{64k,1m,8m,32m}, allowlist.txt, layout.txt
 make              # builds broker/broker and updater/updater (plain-C SHA-256)
 make broker HASH=openssl   # same broker hashing with OpenSSL EVP, SHA-NI on this CPU; rows carry hash_impl
 make quick        # 10-second smoke test: controlled matrix at 64 KiB, 2 reps, then a summary
 make experiment   # all three matrices into results/<run>_<matrix>.csv (about 75 minutes; RUN=name to label it)
-make plots        # figures and tables into report/figures/ from the run 2 CSVs
+make plots        # figures and tables into report/figures/, report versions into report/figures/paper/
 ```
 
-The repository may live on the Windows filesystem (`/mnt/c/...`); building there is fine. Measurements never run there: the harness copies fixtures into a scratch directory on WSL's ext4 (`$HOME/raceproof-scratch`, override with `RP_SCRATCH`, no spaces in the path) before every trial and refuses any other filesystem, because `rename` and `ETXTBSY` semantics on the Windows bridge are not Linux's.
+The repository may live on the Windows filesystem (`/mnt/c/...`); building there is fine. Measurements never run there: the harness copies fixtures into a scratch directory on a native Linux filesystem (`$HOME/raceproof-scratch`, which is ext4 under WSL; override with `RP_SCRATCH`, no spaces in the path) before every trial and refuses anything that is not ext4, XFS or Btrfs, because `rename` and `ETXTBSY` semantics on the Windows bridge are not Linux's.
 
 ## Components
 
 ### Fixtures
 
-`fixtures/prog.c` is a freestanding x86-64 program (no libc) built as `prog_a` and `prog_b` at four sizes. It prints two lines: `RACEPROOF_ID=<A|B> PID=<pid>` and `RACEPROOF_PAD=<FNV-1a 64 of its padding>`. The padding is filled with the program's own ID byte, so A and B differ at every padding byte. The two lines attest the two regions the attacks target, the ID-printing code and the padding; they do not attest the ELF header or any other byte. Only the four `prog_a` hashes are on the allowlist.
+`fixtures/prog.c` is a freestanding x86-64 program (no libc) built as `prog_a` and `prog_b` at four sizes. It prints two lines: `RACEPROOF_ID=<A|B> PID=<pid>` and `RACEPROOF_PAD=<64-bit checksum of its padding>`. The checksum is the FNV-1a loop (xor a byte, multiply by 1099511628211) started from 1469598103934665603, which is not the standard FNV offset basis (14695981039346656037). Expected values are derived from the fixtures themselves at build time, so every comparison is self-consistent, but an independent FNV-1a implementation will not reproduce the printed values. The padding is filled with the program's own ID byte, so A and B differ at every padding byte. The two lines attest the two regions the attacks target, the ID-printing code and the padding; they do not attest the ELF header or any other byte. Only the four `prog_a` hashes are on the allowlist.
 
 ### Broker
 
 ```bash
-echo "RUN fixtures/bin/prog_a_1m" | ./broker/broker --policy path|fd|sealed [--allowlist file] [--timeout-ms N]
+echo "RUN fixtures/bin/prog_a_1m" | ./broker/broker --policy sealed    # or: --policy path, --policy fd
+# optional: --allowlist FILE (default fixtures/allowlist.txt), --timeout-ms N (default 5000)
 ```
 
 One JSON line per request: the decision, the observed hash, what actually ran (`child_output`), timings, byte counts and errors. Decisions: `APPROVE` (hash on the allowlist, exec attempted), `REJECT` (content failed validation: not an ELF, or hash not on the allowlist), `ERROR` (the broker itself failed before launching: open, read, memfd, seal). An `ERROR` is never counted as a prevention.
@@ -71,7 +72,10 @@ RP_BARRIER_DIR=/path/to/fifos ./updater/updater --mode replace --at post_hash \
 ### Harness and analysis
 
 ```bash
-python3 harness/run_trials.py --matrix controlled|uncontrolled|overhead [--sizes 64k,1m] [--loads idle,stress] [--reps N] [--run-id label] [--out file.csv]
+python3 harness/run_trials.py --matrix controlled --run-id mytest     # or: --matrix uncontrolled, --matrix overhead, --all
+#   optional: --sizes 64k,1m  --loads idle,stress  --reps N  --out file.csv  --require-clean
+bash tools/full_run.sh run4                 # every matrix with both hashes, from a committed tree only, about 80 minutes
+python3 analysis/hash_rate.py results/run4_*.csv   # are the timings usable? policies must hash at the same rate
 python3 analysis/summarize.py results/controlled.csv
 python3 analysis/summarize.py results/overhead.csv --timing
 python3 analysis/plots.py --run run2 --overhead results/run2b_overhead.csv   # what make plots runs
@@ -92,24 +96,25 @@ Outcomes, decided in this order by `harness/classify.py`:
 
 Flags: `torn` (sealed copy matched neither reference), `etxtbsy` (this launch's exec was refused, or a controlled updater write was refused), `unsupported` (executable memfds not permitted), `broker_error`.
 
-`summarize.py` prints counts per configuration with Wilson 95% intervals and never a rate without its n. p99 is nearest-rank. `plots.py` writes three figures and two tables to `report/figures/`: mismatch rate against the inserted gap per policy and attack; launch time against executable size per policy (median, whisker to p99, from the overhead matrix only); and the sealed policy's torn, rejected and mismatched shares against size under a free-timing tail rewrite. Memory cost is reported as bytes copied into the memfd; it is the size of the private copy, not a measure of total system memory.
+`summarize.py` prints counts per configuration with Wilson 95% intervals and never a rate without its n. p99 is nearest-rank, so with the overhead matrix's 50 launches per cell it is the slowest launch. `plots.py` exits non-zero when an input is missing or a figure had no rows, and reports only the files it wrote. It writes three figures and two tables to `report/figures/`: mismatch rate against the inserted gap per policy and attack; launch time against executable size per policy (median, whisker to p99, from the overhead matrix only); and the sealed policy's torn, rejected and mismatched shares against size under a free-timing tail rewrite. Memory cost is reported as bytes copied into the memfd; it is the size of the private copy, not a measure of total system memory. With `--paper` (which `make plots` passes) the same data is also drawn for the report into `report/figures/paper/` as PDF and PNG, one text column wide, greyscale and untitled: unapproved launches per attack and policy with sizes, gaps and loads pooled; which bytes ran when the barrier-controlled attack landed after the policy's last read of the file (after the hash for pathname and open descriptor; after the seal and before the hash for the sealed copy), one tile per attack and policy; the sealed policy's torn-copy rate against size, idle and stress; and launch time against size with the CPU idle, one panel per hash implementation.
 
 ## Layout
 
 | Path | What |
 | --- | --- |
+| `tools/full_run.sh` | one complete run of every matrix with both hashes; refuses to start with uncommitted changes to tracked files or onto existing result files, and keeps a per-run environment record and log |
 | `tools/check_env.sh` | kernel version, memfd policy, filesystem types, and a live probe that creates, seals and executes a memfd with the same flags the broker uses |
 | `fixtures/` | `prog.c`, `build.sh`, outputs in `fixtures/bin/`, `allowlist.txt`, `layout.txt` |
 | `broker/` | `broker.c` (request loop, fork, JSON record, deadline), `policy_path.c`, `policy_fd.c`, `policy_sealed.c`, `barrier.c`, `sha256.c` (vendored, verified against the FIPS vectors) |
 | `updater/` | `updater.c` |
 | `harness/` | `run_trials.py`, `classify.py` and its tests, `config.json` |
-| `analysis/` | `summarize.py`, `plots.py` |
+| `analysis/` | `summarize.py`, `plots.py`, `hash_rate.py` (hash throughput per cell, the check for a run disturbed by other programs) |
 | `results/` | committed CSVs and `env.txt`; see Result files |
 | `report/`, `slides/` | final report and presentation |
 
 ## Result files
 
-Two complete runs of every matrix are committed. Run 1 (`controlled.csv`, `overhead.csv`, `uncontrolled.csv`) was produced by the first harness, with a 36-column header and policies run in order. Run 2 (`run2_controlled.csv`, `run2_overhead.csv`, `run2_uncontrolled.csv`) is the replication on the current harness, with `run_id` and `git_rev` on every row and policies interleaved. `run2_overhead.csv` is kept as data but not plotted: its launch times were inflated by other programs running on the host at the time, which shows as hash throughput far below the controlled matrix's and uneven across policies inside one cell. `run2b_overhead.csv` is the overhead matrix rerun on an otherwise idle machine and is what the figures use. Every figure and table names the files it was drawn from. `run3b_openssl_overhead.csv` is the overhead matrix from the OpenSSL (SHA-NI) broker build (`make broker HASH=openssl`), every row tagged `hash_impl=openssl-evp`; it is the second row of figure 2. `run3_openssl_overhead.csv` is the first attempt at that run and is kept but not plotted: the broker then initialised OpenSSL lazily in each forked child, which added about half a millisecond of library start-up to every launch (the fix initialises once in the parent). `prelim_controlled_64k_nov7.csv` is the 64 KiB preliminary pass. A new run writes `results/<run_id>_<matrix>.csv` and never touches these files; plot it with `python3 analysis/plots.py --run <run_id>`.
+Two complete runs of every matrix are committed. Run 1 (`controlled.csv`, `overhead.csv`, `uncontrolled.csv`) was produced by the first harness, with a 36-column header and policies run in order. Run 2 (`run2_controlled.csv`, `run2_overhead.csv`, `run2_uncontrolled.csv`) is the replication on the current harness, with `run_id` and `git_rev` on every row and policies interleaved in the free-timing and overhead matrices (controlled configurations run one after another in both runs; their outcomes are fixed by the barrier). Run 1's controlled file has 2,719 rows, one short of the plan: one trial exceeded the first harness's 5 s limit and was dropped. Both runs were made on November 7 on the same machine, so they show repeatability within a day, not across days. Every row of run 2, run2b, run3 and run3b carries `git_rev a3537df-dirty` because those runs were measured from an uncommitted tree; commit `82da746` is the first that contains all of that source, and the revision string alone does not identify which state produced which file. `run2_overhead.csv` is kept as data but not plotted: its launch times were inflated by other programs running on the host at the time, which shows as hash throughput far below the controlled matrix's and uneven across policies inside one cell. `run2b_overhead.csv` is the overhead matrix rerun on an otherwise idle machine and is what the figures use. Every figure and table names the files it was drawn from. `run3b_openssl_overhead.csv` is the overhead matrix from the OpenSSL (SHA-NI) broker build (`make broker HASH=openssl`), every row tagged `hash_impl=openssl-evp`; it is the second row of figure 2. `run3_openssl_overhead.csv` is the first attempt at that run and is kept but not plotted: the broker then initialised OpenSSL lazily in each forked child, which added about half a millisecond of library start-up to every launch (the fix initialises once in the parent). `prelim_controlled_64k_nov7.csv` is the 64 KiB preliminary pass. A new run writes `results/<run_id>_<matrix>.csv` and never touches these files; plot it with `python3 analysis/plots.py --run <run_id>`.
 
 Absolute launch times differ between runs by 25 to 40% with no code change, so quote them as this machine, this run. The ratios are stable for a given hash: with the plain-C SHA-256 (230 to 300 MB/s) the copy is 8 to 10% of a sealed launch at every size and hashing is about half of a 64 KiB launch and 90 to 99% above 1 MiB; with OpenSSL's SHA-NI SHA-256 (1.6 to 1.75 GB/s on this CPU) path and fd launches are 3 to 5× faster, the copy, which runs at about 3 GB/s either way, becomes 11% of a sealed launch at 64 KiB, 25% at 1 MiB and a third at 8 and 32 MiB, and the sealed policy's premium over the pathname policy rises from 1.06 to 1.35× to 1.4 to 1.7×.
 

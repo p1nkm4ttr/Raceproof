@@ -53,7 +53,7 @@ void _start(void) {
     buf[i++] = '\n';
     sys3(SYS_write, 1, (long)buf, i);
 
-    /* Second line: FNV-1a 64 over the padding (0 bytes if unpadded). */
+    /* Second line: FNV-1a-style 64-bit checksum of the padding. The start value is not the standard offset basis (14695981039346656037); expected values are derived from this code, so it must stay as it is. */
     unsigned long long h = 1469598103934665603ULL;
 #if PAD_BYTES > 0
     for (long j = 0; j < PAD_BYTES; j++) { h ^= pad[j]; h *= 1099511628211ULL; }
